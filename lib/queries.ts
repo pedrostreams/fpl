@@ -150,10 +150,17 @@ export async function getScoutRows(): Promise<ScoutRow[]> {
   }))
 }
 
-export type GemRow = {
+/**
+ * One shape for both buying surfaces. `/gems` and the dashboard panel ask different questions
+ * — "who is good that nobody owns" against "who should I buy" — but they answer with the same
+ * row, so they share a type and a renderer. The only difference is which view supplies `score`
+ * and whether the under-10% rule is a filter or just a flag.
+ */
+export type TargetRow = {
   playerCode: number
   webName: string
   position: string
+  elementType: number
   teamShort: string | null
   price: number | null
   selectedByPercent: number | null
@@ -162,33 +169,51 @@ export type GemRow = {
   xgiPer90: number | null
   defconPer90: number | null
   xgcPer90: number | null
+  bpsPer90: number | null
   pointsPerMillion: number | null
   outputPercentile: number | null
   differentialPercentile: number | null
   valuePercentile: number | null
-  gemScore: number | null
   isAvailable: boolean
   status: string | null
   news: string | null
   penaltiesOrder: number | null
   chanceOfPlaying: number | null
   minutesShare: number | null
+  /** 0 means a blank gameweek, and the fixture columns below are all null. */
+  fixtureCount: number
+  /** `ARS` home, `ars` away, comma-separated over a double. */
+  opponents: string | null
+  fixtureDifficulty: number | null
+  fixtureXgFor: number | null
+  fixtureCleanSheets: number | null
+  /** Which half of the fixture this player's position actually cares about. */
+  fixtureBasis: string | null
+  fixtureRank: number | null
+  /** The opponent's league rank in the dimension this player exploits. 1 = best, so high is good. */
+  opponentRank: number | null
+  opponentPerMatch: number | null
+  /** Not 20 — promoted clubs have no top-flight record, so the denominator is counted. */
+  rankedClubs: number | null
+  minutesRank: number | null
+  isDifferential: boolean
+  score: number | null
 }
 
-export async function getHiddenGems(limit = 60): Promise<GemRow[]> {
-  const rows = await query<Record<string, unknown>>(
-    `select player_code, web_name, position, team_short, price, selected_by_percent,
-            minutes, total_points, xgi_per_90, defcon_per_90, xgc_per_90,
-            points_per_million, output_percentile, differential_percentile,
-            value_percentile, gem_score, is_available, status, news, penalties_order,
-            chance_of_playing, minutes_share
-     from hidden_gems limit $1`,
-    [limit],
-  )
-  return rows.map((r) => ({
+const TARGET_COLUMNS = `player_code, web_name, position, element_type, team_short, price,
+        selected_by_percent, minutes, total_points, xgi_per_90, defcon_per_90, xgc_per_90,
+        bps_per_90, points_per_million, output_percentile, differential_percentile,
+        value_percentile, is_available, status, news, penalties_order, chance_of_playing,
+        minutes_share, fixture_count, opponents, fixture_difficulty, fixture_xg_for,
+        fixture_clean_sheets, fixture_basis, fixture_rank, opponent_rank, opponent_per_match,
+        ranked_clubs, minutes_rank`
+
+function toTarget(r: Record<string, unknown>): TargetRow {
+  return {
     playerCode: Number(r.player_code),
     webName: String(r.web_name ?? ''),
     position: String(r.position ?? ''),
+    elementType: Number(r.element_type),
     teamShort: (r.team_short as string) ?? null,
     price: num(r.price),
     selectedByPercent: num(r.selected_by_percent),
@@ -197,18 +222,55 @@ export async function getHiddenGems(limit = 60): Promise<GemRow[]> {
     xgiPer90: num(r.xgi_per_90),
     defconPer90: num(r.defcon_per_90),
     xgcPer90: num(r.xgc_per_90),
+    bpsPer90: num(r.bps_per_90),
     pointsPerMillion: num(r.points_per_million),
     outputPercentile: num(r.output_percentile),
     differentialPercentile: num(r.differential_percentile),
     valuePercentile: num(r.value_percentile),
-    gemScore: num(r.gem_score),
     isAvailable: Boolean(r.is_available),
     status: (r.status as string) ?? null,
     news: (r.news as string) ?? null,
     penaltiesOrder: num(r.penalties_order),
     chanceOfPlaying: num(r.chance_of_playing),
     minutesShare: num(r.minutes_share),
-  }))
+    fixtureCount: Number(r.fixture_count ?? 0),
+    opponents: (r.opponents as string) ?? null,
+    fixtureDifficulty: num(r.fixture_difficulty),
+    fixtureXgFor: num(r.fixture_xg_for),
+    fixtureCleanSheets: num(r.fixture_clean_sheets),
+    fixtureBasis: (r.fixture_basis as string) ?? null,
+    fixtureRank: num(r.fixture_rank),
+    opponentRank: num(r.opponent_rank),
+    opponentPerMatch: num(r.opponent_per_match),
+    rankedClubs: num(r.ranked_clubs),
+    minutesRank: num(r.minutes_rank),
+    isDifferential: Boolean(r.is_differential),
+    score: num(r.score),
+  }
+}
+
+/** Under 10% owned. The filter is the page's whole premise, so it stays a filter here. */
+export async function getHiddenGems(limit = 60): Promise<TargetRow[]> {
+  const rows = await query<Record<string, unknown>>(
+    `select ${TARGET_COLUMNS}, true as is_differential, gem_score as score
+     from hidden_gems limit $1`,
+    [limit],
+  )
+  return rows.map(toTarget)
+}
+
+/**
+ * No ownership gate. The dashboard asks who to buy, and excluding Haaland, Saka and Raya from
+ * that answer because other people also own them was never defensible — it was one filter
+ * doing two jobs. Ownership is shown, and flags a differential, but does not order the list.
+ */
+export async function getTargetPlayers(limit = 60): Promise<TargetRow[]> {
+  const rows = await query<Record<string, unknown>>(
+    `select ${TARGET_COLUMNS}, is_differential, target_score as score
+     from target_players limit $1`,
+    [limit],
+  )
+  return rows.map(toTarget)
 }
 
 export type TeamRow = {

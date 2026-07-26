@@ -27,6 +27,15 @@ export function fmtSigned(v: number | null | undefined, digits = 2): string {
   return `${v > 0 ? '+' : ''}${v.toFixed(digits)}`
 }
 
+/** "18th of 20". Halves survive a double gameweek, where the rank is a mean of two opponents. */
+export function ordinal(v: number | null | undefined): string {
+  if (v === null || v === undefined) return '—'
+  if (!Number.isInteger(v)) return v.toFixed(1)
+  const rem100 = v % 100
+  if (rem100 >= 11 && rem100 <= 13) return `${v}th`
+  return `${v}${['th', 'st', 'nd', 'rd'][v % 10] ?? 'th'}`
+}
+
 export const POSITION_VAR: Record<string, string> = {
   GKP: 'var(--pos-gkp)',
   DEF: 'var(--pos-def)',

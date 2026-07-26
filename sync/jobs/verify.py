@@ -471,9 +471,46 @@ def run(
                 problems.append(f"last successful snapshot run was {int(since)} minutes ago, "
                                 f"expected hourly — lost time series cannot be recovered")
 
+        tgt = db.fetch(conn, "select * from target_check")
+        if tgt:
+            print("\n=== target_players / hidden_gems (fixture-aware) ===")
+            print(_fmt(tgt))
+            t = tgt[0]
+            for flag, message in (
+                # 0013's fault, now asserted on both surfaces. A recommendation to buy someone
+                # who cannot play is worse than an empty panel.
+                ("all_targets_available", "target_players recommends an unavailable player"),
+                ("all_gems_available", "hidden_gems recommends an unavailable player"),
+                ("fixture_rank_in_range", "a fixture rank outside [0,1]"),
+                ("score_in_range", "a target score outside [0,1]"),
+                # The position split is the point of 0014. If it stops holding, every keeper is
+                # being ranked on how many goals his own side is expected to score.
+                ("keepers_on_clean_sheets",
+                 "a keeper or defender is being ranked on expected goals for, not clean sheets"),
+                ("attackers_on_goals",
+                 "a midfielder or forward is being ranked on clean sheets, not goals"),
+                ("opponent_rank_sane", "an opponent league rank outside 1..20 — the join is wrong"),
+                # A club playing this gameweek must have a rank; a club blanking must not. Both
+                # directions matter: the first would silently zero a good fixture, the second
+                # would print a 0 that reads as "hard fixture" when the truth is "no fixture".
+                ("ranked_when_playing", "a player with a fixture has no fixture rank"),
+                ("null_when_blank", "a blanking player has a fixture rank"),
+            ):
+                # `is False` only: bool_and over an empty set is NULL, which is what happens
+                # when nobody blanks. Absence of the case is not failure of the check.
+                if t[flag] is False:
+                    problems.append(f"target_players: {message}")
+            # If the fixture correlates almost perfectly with output, it is not adding
+            # information and the extra component is just noise dressed as rigour.
+            corr = t["output_fixture_corr"]
+            if corr is not None and abs(float(corr)) > 0.9:
+                problems.append(f"target_players: fixture rank correlates with output at "
+                                f"{corr} — the fixture axis is not adding information")
+
         gems = db.fetch(conn, """
             select position, count(*) as n, round(avg(gem_score), 3) as avg_score,
-                   round(max(gem_score), 3) as best
+                   round(max(gem_score), 3) as best,
+                   count(*) filter (where fixture_count = 0) as blanking
             from hidden_gems group by position order by position
         """)
         if gems:

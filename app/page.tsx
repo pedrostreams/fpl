@@ -2,15 +2,16 @@ import { CaptainPanel } from '@/components/captain-panel'
 import { Metric, Panel, PlayerLine, RunPips } from '@/components/dash'
 import { WatchButton } from '@/components/watch-button'
 import { fmt, fmtInt, fmtPct, fmtPrice, fmtSigned, relativeAge } from '@/lib/format'
+import { FixtureNote } from '@/components/fixture-note'
 import {
   getCaptainPicks,
   getFormPlayers,
-  getHiddenGems,
   getManager,
   getNextMatches,
   getSeasonContext,
   getSnapshotCoverage,
   getSyncHealth,
+  getTargetPlayers,
   getTeamTargets,
   getWatchlist,
   getWatchlistCodes,
@@ -38,7 +39,7 @@ function daysUntil(iso: string | null): number | null {
 
 export default async function Dashboard() {
   const [
-    ctx, manager, watchlist, captains, attackRuns, defenceRuns, gems, form, matches,
+    ctx, manager, watchlist, captains, attackRuns, defenceRuns, targets, form, matches,
     coverage, health, watchedCodes,
   ] = await Promise.all([
     getSeasonContext(),
@@ -47,7 +48,7 @@ export default async function Dashboard() {
     getCaptainPicks(30),
     getTeamTargets('attack', 5),
     getTeamTargets('defence', 5),
-    getHiddenGems(6),
+    getTargetPlayers(6),
     getFormPlayers(6),
     getNextMatches(10),
     getSnapshotCoverage(),
@@ -245,43 +246,68 @@ export default async function Dashboard() {
         </Panel>
 
         {/* ---- players to target ---- */}
+        {/* No ownership gate here any more. This panel used to read `hidden_gems`, so the
+            answer to "who should I buy" silently excluded Haaland, Saka, Raya and Bruno for
+            the crime of being popular — one filter doing two different jobs. `/gems` keeps
+            it, because being unowned is that page's entire premise. */}
         <Panel
           title="Players to target"
           href="/gems"
-          hrefLabel="All gems"
+          hrefLabel="Differentials"
           lead={
-            gems.length === 0 ? (
+            targets.length === 0 ? (
               'No player qualifies yet.'
             ) : (
               <>
-                Under 10% owned, fit, and with a reliable sample. <strong>{gems[0].webName}</strong>{' '}
-                scores highest on output, scarcity and value combined.
+                Output, minutes, value and this week&apos;s fixture, weighted equally —
+                ownership shown but not scored. <strong>{targets[0].webName}</strong> leads
+                {targets[0].fixtureCount > 0 && <> against {targets[0].opponents}</>}.
               </>
             )
           }
         >
           <div className="flex flex-col gap-2.5">
-            {gems.map((g) => (
+            {targets.map((t) => (
               <PlayerLine
-                key={g.playerCode}
-                playerCode={g.playerCode}
-                webName={g.webName}
-                position={g.position}
-                teamShort={g.teamShort}
-                status={g.status}
-                news={g.news}
+                key={t.playerCode}
+                playerCode={t.playerCode}
+                webName={t.webName}
+                position={t.position}
+                teamShort={t.teamShort}
+                status={t.status}
+                news={t.news}
                 sub={
-                  <>
-                    {fmtPrice(g.price)} · {fmtPct(g.selectedByPercent)} owned ·{' '}
-                    {fmt(g.pointsPerMillion, 1)} pts/£m
-                  </>
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <FixtureNote row={t} compact />
+                    <span>
+                      {fmtPrice(t.price)} · {fmtPct(t.selectedByPercent)} owned ·{' '}
+                      {fmt(t.pointsPerMillion, 1)} pts/£m
+                    </span>
+                    {t.isDifferential && (
+                      <span
+                        className="rounded px-1 text-[9px] font-bold uppercase"
+                        style={{
+                          background: 'color-mix(in oklab, var(--accent) 22%, transparent)',
+                          color: 'var(--accent)',
+                        }}
+                        title="Under 10% owned — a differential rather than template"
+                      >
+                        diff
+                      </span>
+                    )}
+                  </span>
                 }
                 right={
                   <span className="num text-[12px]" style={{ color: 'var(--accent)' }}>
-                    {fmt(g.gemScore, 3)}
+                    {fmt(t.score, 3)}
                   </span>
                 }
-                action={<WatchButton playerCode={g.playerCode} watched={false} />}
+                action={
+                  <WatchButton
+                    playerCode={t.playerCode}
+                    watched={watchedCodes.includes(t.playerCode)}
+                  />
+                }
               />
             ))}
           </div>

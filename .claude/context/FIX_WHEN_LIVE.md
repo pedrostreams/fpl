@@ -87,6 +87,10 @@ The biggest shape change. Several things flip at once, so check them in this ord
       current season *with minutes* has never fired, so its logic is unproven. Confirm
       `player_season_totals` now has a `2026-27` / `bootstrap` row set that is genuinely
       this season
+- [ ] **`target_check.null_when_blank` currently reads NULL, not true.** `bool_and` over an
+      empty set is NULL, and no club blanks in GW1 — so the assertion that a blanking player
+      has no fixture rank has never actually been evaluated. It becomes real at the first
+      blank; until then treat it as unproven, not as passing
 - [ ] **Fixture ticker mid-gameweek** — the case that was only ever simulated. During the GW2
       weekend, with some matches played: `/teams` shows the *window is not the same size*
       banner, the `#` column differs between clubs, and short rows are flagged
@@ -135,8 +139,14 @@ duplicate or delete a `fixtures` row inside a transaction, render, roll back.
       (~GW10) by design, and 30 matches would be worse than last season's 272
 - [ ] Physical data coverage — was 144 of 12 242 rows (1.2%) and behind `nullif`. Recheck
       before building anything on it
-- [ ] Promoted clubs now have `team_style` rows → `team_style` covers 20 of 20, and the
-      promoted banner on `/teams` disappears by itself
+- [ ] **Move the target minutes floor onto this season.** `player_target_base` gates at 25% of
+      *last* season's minutes and ranks on the same figure, which is a stand-in with a known
+      failure: a player who was a bit-part last year and is a nailed starter now is penalised,
+      and vice versa. Once `player_gw_stats` has a few rounds, read minutes from there. The
+      floor exists because without it a backup keeper on 540 minutes ranked first on `/gems`
+- [ ] Promoted clubs now have `team_style` rows → `team_style` covers 20 of 20, the
+      promoted banner on `/teams` disappears by itself, and the opponent note on `/gems` stops
+      reading "of 17" and "promoted, no top-flight record"
 - [ ] Storage growth on trend for the season → the growth query in `docs/SYNC_PLAN.md` §8
 
 ## 7. End of season
@@ -165,12 +175,23 @@ Run this whole block once after GW1 and once after GW5. Each item is something t
 - [ ] Stale-sync chip appears if a job goes red — force it by pausing a workflow
 - [ ] Still ~109 KB compressed with in-season data. Measure, don't assume
 
-### `/gems`
+### `/gems` and the dashboard's "Players to target"
 
 - [ ] Not empty (see the cold-start judgement in §4)
 - [ ] Output is position-aware: no goalkeeper ranked on xGI, no keeper ranked on DEFCON
-- [ ] The three component bars sum sensibly to the headline score
+- [ ] The five component bars average to the headline score
 - [ ] Ownership under 10% still holds as a differential filter once the crowd converges
+- [ ] **Fixture is position-aware too** — keepers and defenders ranked on expected clean
+      sheets, midfielders and forwards on expected goals for. `target_check` asserts this, but
+      confirm on screen that a keeper's opponent note reads *create* and a forward's *concede*
+- [ ] **A double gameweek stacks in the opponent chip** as `ARS, whu ×2`, and the summed xG
+      and clean sheets reward it. A blank reads *blank gameweek* in warn colour and scores 0
+      on the fixture axis — never a `0` that looks like a hard fixture
+- [ ] **Every card still prints the minutes share in words.** A percentile hid a 540-minute
+      backup keeper at rank 01 once, and hid Havertz on the captain panel before that. If this
+      line ever disappears, the same class of fault returns invisibly
+- [ ] The dashboard panel has **no** ownership gate — Haaland and Saka are allowed to appear —
+      while `/gems` still has one. Confirm the two lists genuinely differ
 
 ### `/teams`
 
