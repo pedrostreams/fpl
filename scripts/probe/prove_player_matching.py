@@ -14,6 +14,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+# Every case here is deliberately non-ASCII — that is the whole point of the suite — and a
+# Windows console defaults to cp1252, which cannot encode Ł, đ or ß. Without this the suite
+# passes all 44 cases and then dies printing them, which on the developer's own machine is
+# indistinguishable from a failure.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from sync.matching.players import FplPlayer, PlayerResolver, normalise  # noqa: E402

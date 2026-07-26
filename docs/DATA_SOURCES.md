@@ -12,7 +12,7 @@ row, because the free-football-data landscape moved twice in the last 12 months.
 
 ## 0. The headline findings
 
-Four things drive every decision in this document:
+Five things drive every decision in this document:
 
 1. **The official FPL API is far richer than it used to be and now carries Opta xG/xA
    natively.** 105 fields per player, including `expected_goals`, `expected_assists`,
@@ -37,6 +37,13 @@ Four things drive every decision in this document:
    2026/27). It is currently `0` for all 558 players because the season hasn't started.
    Treat it as a free *input signal* to our own model, not as a competitor — we will
    have the raw net-transfer curve it is derived from, which it does not expose.
+
+5. **No free source gives odds for a fixture more than about a week out.**
+   football-data.co.uk publishes only matches already played. So forward-looking fixture
+   difficulty comes from ClubElo, with its constants **fitted against** last season's
+   de-vigged market rather than chosen by hand (§3.3, §3.4, migration 0007). The pattern
+   generalises: where a market exists in arrears, use it to calibrate a model that can run
+   ahead of it, and record the fit quality so the model stays falsifiable.
 
 ---
 
@@ -281,6 +288,14 @@ rows dated forward to `2026-12-31`. Columns: `Rank,Club,Country,Level,Elo,From,T
 This is the cleanest available substitute for FPL's unpopulated `strength_*` fields, and
 unlike FDR it is continuous, opponent-adjusted, and has real history for backtesting.
 
+**Promoted to the primary fixture-difficulty input (2026-07-26).** It is the only source
+here that is *forward-looking* — see §3.4 for why the odds cannot be — and it covers all 20
+clubs including the promoted three, because Elo carries over from the Championship. That
+makes it the one metric on the teams page with no promoted-club blind spot.
+`elo_now` (migration 0007) exposes each club's current rating: `distinct on (team_code)`
+ordered by `valid_from desc`, because ClubElo carries the current rating forward on
+future-dated rows and an upcoming fixture wants today's strength, not a future stamp.
+
 ### 3.4 football-data.co.uk — bookmaker odds
 
 `https://www.football-data.co.uk/mmz4281/{season}/E0.csv`, e.g. `2627` for 2026/27.
@@ -292,6 +307,19 @@ Why this matters more than it looks: de-vigged 1X2 and O/U 2.5 odds convert into
 implied win and clean-sheet probabilities that are strictly better fixture-difficulty
 inputs than FPL's integer 1–5 FDR. Free, no key, weekly refresh. Paid odds APIs are
 unnecessary — and their free tiers (100 req/hour) would be a downgrade in coverage.
+
+**But it is retrospective, and that changed the design (2026-07-26).** `E0.csv` only
+contains matches already played: all 380 rows for 2025-26 carry a final score, none is in
+the future. There is no bookmaker price here for a fixture six weeks out, so odds **cannot**
+drive a forward-looking fixture ticker. What they can do is *calibrate* one — the Elo model
+in migration 0007 takes its home-advantage, draw-curve and scoring constants from a fit
+against the 272 matches where we hold both these de-vigged probabilities and each side's Elo
+on the day. See `scripts/probe/calibrate_elo_fixtures.py`. So the market still sets the
+numbers; it just does so a season in arrears.
+
+A live-odds source for upcoming fixtures would be a genuine upgrade and remains unsolved on
+free terms. football-data.co.uk publishes a cross-league `fixtures.csv` covering roughly the
+next week, which would sharpen the imminent gameweek but not a six-week ticker.
 
 ---
 
@@ -387,7 +415,7 @@ Which source answers each thing you asked for:
 | **Who rises/falls in price in the next 24h** | **Our own `player_snapshots` time series** (net-transfer velocity) | FPL `price_change_percent`, `transfers_in/out_event` |
 | Which teams are performing | Understat team xG/xGA rolling | ClubElo, odds-implied strength |
 | **Which teams play defensive football** | **Understat `ppda` + `deep_completions`** | xGA per match, O/U 2.5 odds |
-| Fixture difficulty (better than FDR) | football-data.co.uk de-vigged odds | ClubElo, FPL `difficulty` as fallback |
+| Fixture difficulty (better than FDR) | **ClubElo**, via the fitted model in migration 0007 | football-data.co.uk odds as the *calibration target*, FPL `difficulty` for comparison |
 | Who reliably hits the DEFCON threshold | FPL `defensive_contribution_per_90` + components | Sofascore `tackles`/`interceptions`/`clearances` |
 | Set-piece and penalty threat | FPL `penalties_order` / `*_freekicks_order` / corners | Understat `situation` on shot events |
 | Rotation and European-fixture risk | FPL `starts_per_90`, `status`, `news` | FPL-Core-Insights cup/Euro coverage |

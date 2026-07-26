@@ -20,6 +20,7 @@ python scripts/probe/probe_sources.py            # health-check every source; ex
 python scripts/probe/prove_snapshot_logic.py     # insert-on-change regression, no DB needed
 python scripts/probe/prove_player_matching.py    # 44 name-matching cases, no DB needed
 
+python scripts/probe/calibrate_elo_fixtures.py   # refit the fixture-difficulty constants
 python scripts/migrate.py                        # apply all migrations (idempotent)
 
 python -m sync.cli all --dry-run                 # FPL core: dimensions, history, snapshot
@@ -118,6 +119,12 @@ letting a unique constraint drop one silently.
 - `sync/jobs/history.py` — `element-summary` per player. Field access is defensive
   `.get()` because `history` is empty in preseason; its exact shape can only be confirmed
   after GW1.
+- `scripts/probe/calibrate_elo_fixtures.py` — fits the fixture-difficulty constants. **The
+  only place they are derived**; migration 0007 hardcodes the output. Re-run it after a season
+  and update both the constants and the fit numbers quoted in the migration header. Its
+  clean-sheet quartile check exists because it caught a real inversion: side *i*'s clean sheet
+  is its **opponent's** lambda, and scoring `exp(-lambda[i])` against "side *i* kept a blank"
+  compares two different teams' events, which reads as a plausible model running backwards.
 
 ## Web app
 
@@ -141,12 +148,13 @@ is usually taken by one of the sibling projects), `npm run build`, `npm run type
 - Pages use segment `revalidate = 300`. Cache Components (`cacheComponents: true`) are opt-in
   in Next 16 and not enabled; the sync writes hourly at most, so five minutes costs nothing.
 
-Design language lives in `app/globals.css` as CSS variables, dark-first with a full light
-theme. The **heatmap mixes colour in CSS**, not JS: the percentile is passed as a `--p`
-custom property and `.heat` does a `color-mix` between two theme variables, so switching
-theme needs no re-render. A null percentile gets `.heat-null` hatching — "not ranked" must
-not look like "ranked low". All colours are oklch because the heatmap interpolates across the
-full 0–1 range and sRGB midtones go muddy.
+**Design language is `.claude/context/DESIGN.md`** — tokens, the heatmap contract, table and
+badge conventions, what's deliberately absent, and the open questions the design round has to
+settle. Read it before adding a screen; **update it in the same commit as any change to
+`app/globals.css`**, the same discipline `docs/DATA_SOURCES.md` gets for data. Two rules from
+it that a code change can silently break: **colour always means better, never bigger** (invert
+"lower is better" metrics in the SQL view, never in the component), and **null must never
+render as low** (em dash, or `.heat-null` hatching for an unranked cell).
 
 Payload note: `/scout` ships all 558 rows so filtering and sorting are instant with no
 round-trip. That is 2.4 MB of HTML but **109 KB compressed** (measured, not assumed) — the
@@ -174,8 +182,12 @@ Short version:
   Sofascore is contacted. Gates on TLS fingerprint — `curl_cffi` with
   `impersonate="chrome120"`, not plain `requests`. Raises `SofascoreBlocked` on 403/429 so
   callers can tell "blocked from this IP" from "source changed shape".
-- **ClubElo**, **football-data.co.uk** — Tier 2. Team strength; closing odds → de-vigged
-  win/clean-sheet probabilities, a much better fixture difficulty than FPL's integer FDR.
+- **ClubElo** — Tier 2, and the **primary forward-looking fixture-difficulty input**. The only
+  source here that covers a fixture before it is played, and the only team metric that covers
+  promoted clubs.
+- **football-data.co.uk** — Tier 2. De-vigged closing odds. **Retrospective only**: `E0.csv`
+  contains nothing but played matches, so it cannot price a future fixture. It serves as the
+  *calibration target* for the Elo model instead — see `docs/DATA_SOURCES.md` §3.4.
 - **FBref — do not use.** Lost its Opta licence January 2026; advanced data deleted. A
   second loss after the StatsBomb termination. Basic stats and historical archive only.
 - **Sportmonks — not used here.** The FPL API already supplies Opta xG.

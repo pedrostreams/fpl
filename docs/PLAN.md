@@ -116,9 +116,14 @@ warns the version has breaking changes.
   reason shown, and honest about cold-start players.
 - **Team profiles** — PPDA and deep completions as a defensive/pressing axis, rolling
   xG/xGA, Elo.
-- **Fixture ticker on odds-implied difficulty**, not FPL's integer 1–5 FDR. De-vigged 1X2
-  and O/U 2.5 give win and clean-sheet probabilities. Falls back to Elo until `2627/E0.csv`
-  exists.
+- ~~**Fixture ticker on odds-implied difficulty.** De-vigged 1X2 and O/U 2.5 give win and
+  clean-sheet probabilities. Falls back to Elo until `2627/E0.csv` exists.~~ **Done, but not
+  as planned.** The fallback turned out to be the only option: `E0.csv` contains *only played
+  matches*, so it never prices a future fixture and "until it exists" was never going to
+  arrive. Elo is the primary input, and the odds are used to **fit** the model's constants
+  against the 272 matches where we hold both. Better than the original plan — the market
+  still sets the numbers, and the fit is measurable (Spearman 0.92 vs market). Delivered with
+  three lenses, because one difficulty number cannot serve a striker and a centre-back.
 - Set-piece and penalty threat, straight from the FPL taker orders — free and first-party.
 
 ### Week 4 — 2026-08-17 → 08-21: price watch, deploy, buffer
@@ -158,7 +163,7 @@ fit the rise/fall model properly instead of a threshold heuristic.
 | Price rise/fall next 24h | **our own snapshots** + `price_change_percent` | collecting now, screen Week 4 |
 | Which teams are performing | Understat xG/xGA, ClubElo | Week 3 |
 | Which teams play defensively | **Understat PPDA + deep completions** | Week 3 |
-| Better fixture difficulty | de-vigged bookmaker odds | Week 3 |
+| Better fixture difficulty | ClubElo, fitted to de-vigged odds | Week 3 |
 | DEFCON bankers | FPL `defensive_contribution_per_90` | Week 2 |
 | Set-piece threat | FPL taker orders | Week 3 |
 | Beat *your* mini-league | `leagues-classic` + `entry/.../picks` | After GW1 |

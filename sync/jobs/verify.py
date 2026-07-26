@@ -384,6 +384,34 @@ def run(
                 problems.append(f"{bad_cs[0]['n']} fixture_odds rows have an implausible "
                                 f"clean-sheet probability or expected goals")
 
+        # The Elo fixture model. Its constants are fitted offline by
+        # scripts/probe/calibrate_elo_fixtures.py, so nothing in the sync can notice if the
+        # view's arithmetic drifts — these invariants are the only guard.
+        fd = db.fetch(conn, "select * from fixture_difficulty_check")
+        if fd:
+            print("\n=== fixture_difficulty (Elo model, calibrated to market odds) ===")
+            print(_fmt(fd))
+            f = fd[0]
+            for flag, message in (
+                ("probabilities_sum_to_1", "1X2 probabilities don't sum to 1"),
+                ("difficulty_in_range", "difficulty outside [0,1]"),
+                ("position_difficulty_in_range", "attack/defence difficulty outside [0,1]"),
+                ("clean_sheet_in_range", "clean-sheet probability outside [0,1]"),
+                ("home_advantage_present", "home sides are not favoured — an Elo sign is wrong"),
+            ):
+                if f[flag] is False:
+                    problems.append(f"fixture_difficulty: {message}")
+            if f["teams"] and f["teams"] != 20:
+                problems.append(f"fixture_difficulty covers {f['teams']} teams, expected 20 "
+                                f"— a club has no Elo rating")
+            # The goal model was fitted to a league mean of 1.373 goals per side. Drifting far
+            # from that means the Elo join is picking up the wrong ratings.
+            if f["avg_expected_goals"] is not None and not (
+                    1.1 <= float(f["avg_expected_goals"]) <= 1.7):
+                problems.append(f"fixture_difficulty averages "
+                                f"{f['avg_expected_goals']} expected goals per side, "
+                                f"outside the plausible 1.1-1.7")
+
         gems = db.fetch(conn, """
             select position, count(*) as n, round(avg(gem_score), 3) as avg_score,
                    round(max(gem_score), 3) as best

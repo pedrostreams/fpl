@@ -252,10 +252,10 @@ export async function getTeams(): Promise<TeamRow[]> {
     left join team_style s
       on s.team_code = t.code
      and s.season = (select stats_season from season_context)
-    left join lateral (
-      select e.elo from club_elo e where e.team_code = t.code
-      order by e.valid_from desc limit 1
-    ) elo on true
+    -- elo_now (migration 0007) rather than a lateral over club_elo: "current Elo" was
+    -- defined in two places once the fixture ticker needed it, and two definitions of the
+    -- same number is how they drift apart.
+    left join elo_now elo on elo.team_code = t.code
     order by s.xg_difference desc nulls last, t.name
   `)
   return rows.map((r) => ({
@@ -283,6 +283,138 @@ export async function getTeams(): Promise<TeamRow[]> {
     points: num(r.points),
     elo: num(r.elo),
   }))
+}
+
+export type TickerFixture = {
+  gameweek: number
+  opponentShort: string
+  opponentName: string
+  isHome: boolean
+  kickoff: string | null
+  /** 0 = easiest, 1 = hardest. Three lenses, because an easy fixture for a striker and an
+   *  easy one for a centre-back are not the same fixture. */
+  difficulty: number | null
+  attackDifficulty: number | null
+  defenceDifficulty: number | null
+  pWin: number | null
+  expectedGoalsFor: number | null
+  expectedGoalsAgainst: number | null
+  pCleanSheet: number | null
+  /** FPL's own integer FDR, kept so the page can show what it adds. */
+  fplDifficulty: number | null
+}
+
+export type TickerTeam = {
+  teamCode: number
+  name: string
+  shortName: string
+  elo: number | null
+  /** Indexed by gameweek. Length 0 is a blank, length 2 a double. */
+  byGameweek: Record<number, TickerFixture[]>
+  run: {
+    fixtures: number
+    avgDifficulty: number | null
+    avgAttackDifficulty: number | null
+    avgDefenceDifficulty: number | null
+    expectedGoalsFor: number | null
+    expectedGoalsAgainst: number | null
+    expectedCleanSheets: number | null
+    expectedWins: number | null
+  }
+}
+
+export type Ticker = {
+  gameweeks: number[]
+  teams: TickerTeam[]
+}
+
+/**
+ * The next six gameweeks per team, from `fixture_difficulty` (migration 0007).
+ *
+ * The horizon is fixed at six to match the `fixture_run` view's aggregate — a UI control
+ * for it would leave the summary column describing a different span from the cells beside
+ * it, and re-deriving the aggregate in TypeScript would put a metric outside SQL where
+ * `verify` can't check it.
+ */
+export async function getFixtureTicker(): Promise<Ticker> {
+  const rows = await query<Record<string, unknown>>(`
+    with horizon as (
+      select distinct gameweek from fixture_difficulty
+      where not coalesce(finished, false) and gameweek is not null
+      order by gameweek limit 6
+    )
+    select
+      fd.gameweek, fd.is_home, fd.kickoff_time,
+      fd.difficulty, fd.attack_difficulty, fd.defence_difficulty,
+      fd.p_win, fd.expected_goals_for, fd.expected_goals_against, fd.p_clean_sheet,
+      fd.fpl_difficulty,
+      t.code as team_code, t.name as team_name, t.short_name as team_short,
+      o.short_name as opponent_short, o.name as opponent_name,
+      e.elo,
+      fr.fixtures, fr.avg_difficulty, fr.avg_attack_difficulty, fr.avg_defence_difficulty,
+      fr.expected_goals_for as run_xg_for, fr.expected_goals_against as run_xg_against,
+      fr.expected_clean_sheets, fr.expected_wins
+    from fixture_difficulty fd
+    join horizon h on h.gameweek = fd.gameweek
+    join teams t on t.code = fd.team_code
+    join teams o on o.code = fd.opponent_code
+    left join elo_now e on e.team_code = fd.team_code
+    left join fixture_run fr on fr.team_code = fd.team_code
+    where not coalesce(fd.finished, false)
+    order by fr.avg_difficulty nulls last, t.name, fd.gameweek, fd.kickoff_time
+  `)
+
+  const gameweeks = [...new Set(rows.map((r) => Number(r.gameweek)))].sort(
+    (a, b) => a - b,
+  )
+  const byTeam = new Map<number, TickerTeam>()
+
+  for (const r of rows) {
+    const code = Number(r.team_code)
+    let team = byTeam.get(code)
+    if (!team) {
+      team = {
+        teamCode: code,
+        name: String(r.team_name ?? ''),
+        shortName: String(r.team_short ?? ''),
+        elo: num(r.elo),
+        // Every gameweek in the horizon gets a key, so a blank is an empty array rather
+        // than a missing property the renderer has to guess about.
+        byGameweek: Object.fromEntries(
+          gameweeks.map((gw) => [gw, [] as TickerFixture[]]),
+        ),
+        run: {
+          fixtures: Number(r.fixtures ?? 0),
+          avgDifficulty: num(r.avg_difficulty),
+          avgAttackDifficulty: num(r.avg_attack_difficulty),
+          avgDefenceDifficulty: num(r.avg_defence_difficulty),
+          expectedGoalsFor: num(r.run_xg_for),
+          expectedGoalsAgainst: num(r.run_xg_against),
+          expectedCleanSheets: num(r.expected_clean_sheets),
+          expectedWins: num(r.expected_wins),
+        },
+      }
+      byTeam.set(code, team)
+    }
+    const gw = Number(r.gameweek)
+    team.byGameweek[gw]?.push({
+      gameweek: gw,
+      opponentShort: String(r.opponent_short ?? ''),
+      opponentName: String(r.opponent_name ?? ''),
+      isHome: Boolean(r.is_home),
+      kickoff: r.kickoff_time ? new Date(r.kickoff_time as string).toISOString() : null,
+      difficulty: num(r.difficulty),
+      attackDifficulty: num(r.attack_difficulty),
+      defenceDifficulty: num(r.defence_difficulty),
+      pWin: num(r.p_win),
+      expectedGoalsFor: num(r.expected_goals_for),
+      expectedGoalsAgainst: num(r.expected_goals_against),
+      pCleanSheet: num(r.p_clean_sheet),
+      fplDifficulty: num(r.fpl_difficulty),
+    })
+  }
+
+  return { gameweeks, teams: [...byTeam.values()] }
 }
 
 export type SyncHealth = {

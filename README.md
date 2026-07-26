@@ -123,7 +123,28 @@ ten false positives.
 |---|---|
 | `/scout` | All 558 players, per-90 rates with percentile heatmaps, sortable and filterable client-side |
 | `/gems` | Hidden gems ranked on output × ownership scarcity × value, each score showing its components |
-| `/teams` | Style and performance per team — PPDA press axis, xG/xGA, clean sheets, Elo |
+| `/teams` | Fixture difficulty for the next six gameweeks, plus style and performance per team — PPDA press axis, xG/xGA, clean sheets, Elo |
 
-Remaining before GW1: odds-based fixture ticker, price watch (blocked on data until the GW1
-deadline), and deploy. See [docs/PLAN.md](docs/PLAN.md).
+Design language: [.claude/context/DESIGN.md](.claude/context/DESIGN.md).
+
+### Fixture difficulty
+
+No free source prices a fixture more than about a week ahead, and FPL's own rating uses four
+values across 760 team-fixtures with 45% of the season in one bucket. So difficulty is modelled
+from ClubElo, with every constant **fitted against last season's betting market** rather than
+picked by hand:
+
+```bash
+python scripts/probe/calibrate_elo_fixtures.py     # refit; prints the constants and the error
+```
+
+Fitted on the 272 matches of 2025-26 where both clubs are in the current league and we hold
+each side's Elo on the day. It reproduces the market's fixture ordering at a Spearman of
+**0.92**, with cross-entropy 1.0281 against a theoretical floor of 1.0142. Clean-sheet
+probability is monotone and well-scaled across quartiles (0.181/0.169 → 0.346/0.353,
+predicted/observed). The constants live in
+[`supabase/migrations/0007_fixture_difficulty.sql`](supabase/migrations/0007_fixture_difficulty.sql);
+`python -m sync.cli verify` guards the invariants.
+
+Remaining before GW1: price watch (blocked on data until the GW1 deadline) and deploy. See
+[docs/PLAN.md](docs/PLAN.md).
