@@ -1,0 +1,44 @@
+name: sync-snapshot
+
+# player_snapshots is the only table that cannot be backfilled — the FPL API has no
+# history endpoint, so any unsampled moment is gone permanently. This is why the job
+# runs from before the season starts even though prices are frozen until GW1
+# (verified 2026-07-26: max(transfers_in) = 0, cost_change_start = 0 for all 558
+# players). What it banks in the meantime is ownership drift across 1.57M squads.
+
+on:
+  schedule:
+    # Hourly baseline.
+    - cron: '0 * * * *'
+    # Prices move once nightly, ~01:30-02:30 UK. That is 00:30-01:30 UTC in summer and
+    # 01:30-02:30 UTC in winter, so sample 00:00-02:59 UTC to bracket the change in
+    # either direction and capture both the pre-change transfer state and the outcome.
+    - cron: '*/15 0-2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  # Never let a delayed run overlap the next tick — snapshots are insert-on-change and
+  # two concurrent runs would race on the same comparison baseline.
+  group: sync-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - run: pip install "psycopg[binary]>=3.2" "requests>=2.32"
+
+      - name: Snapshot
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        # --no-cache: the raw payload cache is pointless on an ephemeral runner, and at
+        # hourly cadence it would be the largest thing in the workspace.
+        run: python -m sync.cli snapshot --no-cache

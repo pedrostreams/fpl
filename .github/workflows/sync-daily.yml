@@ -1,0 +1,40 @@
+name: sync-daily
+
+# Dimensions, fixtures and per-gameweek history. Runs after the nightly price window has
+# closed so the day's first full sync sees settled data.
+
+on:
+  schedule:
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Parse and report without writing'
+        type: boolean
+        default: false
+
+concurrency:
+  group: sync-daily
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    # history makes ~558 requests at 0.25s spacing (~140s) plus upserts.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - run: pip install "psycopg[binary]>=3.2" "requests>=2.32"
+
+      - name: Sync dimensions + history + snapshot
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python -m sync.cli all --no-cache \
+            ${{ inputs.dry_run && '--dry-run' || '' }}

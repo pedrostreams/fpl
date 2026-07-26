@@ -1,0 +1,11 @@
+# Core sync (Phase 1)
+psycopg[binary]>=3.2
+requests>=2.32
+
+# Enrichment scrapers (Phase 2) — all verified working 2026-07-26.
+# curl_cffi is not optional for Sofascore: it gates on TLS fingerprint, so plain
+# requests and cloudscraper both get 403 while chrome120 impersonation gets 200.
+soccerdata>=1.9
+ScraperFC>=4.5
+curl_cffi>=0.15
+pandas>=2.2

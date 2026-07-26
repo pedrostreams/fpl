@@ -1,0 +1,40 @@
+name: probe-sources
+
+# Source health check. The free football data landscape lost StatsBomb-on-FBref and then
+# Opta-on-FBref inside about a year, so a scheduled probe is the difference between
+# noticing a source died this week and noticing it after a month of silent gaps.
+#
+# The probe exits with the number of failed checks, so the job goes red on any breakage.
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'   # Monday morning
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/probe/**'
+      - 'sync/**'
+      - 'requirements.txt'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Probe all sources
+        run: python scripts/probe/probe_sources.py
+
+      - name: Dry-run every sync job
+        run: |
+          python -m sync.cli dimensions --dry-run --no-cache
+          python -m sync.cli snapshot --dry-run --no-cache
+          python -m sync.cli history --dry-run --no-cache --limit 5
