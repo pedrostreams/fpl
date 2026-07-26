@@ -31,6 +31,11 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Probe all sources
+        env:
+          # Unauthenticated GitHub API is 60 requests/hour per IP and runners share IPs,
+          # which rate-limited the FPL-Core-Insights check. GITHUB_TOKEN is injected
+          # automatically and lifts the ceiling well clear of real usage.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/probe/probe_sources.py
 
       # Guards the one logic path whose silent failure is unrecoverable: if the

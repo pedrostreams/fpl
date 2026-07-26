@@ -6,8 +6,12 @@ re-run this before trusting any claim in that document.
 
     python scripts/probe/probe_sources.py            # everything
     python scripts/probe/probe_sources.py understat  # one source
+    python scripts/probe/probe_sources.py --strict   # blocked sources fail too
 
-Exit code is the number of FAILed checks, so CI can gate on it.
+Exit code is the number of FAILed checks, so CI can gate on it. A source that is alive but
+refuses our IP or quota reports as BLOCKED and does not fail the build by default — that
+is a hosting problem, not a code one, and Sofascore is permanently in that state on
+GitHub Actions runners.
 """
 
 from __future__ import annotations
@@ -20,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 
-failures = 0
+failed: list[str] = []
 blocked: list[str] = []
 
 
@@ -33,9 +37,24 @@ def ok(msg: str) -> None:
 
 
 def bad(msg: str) -> None:
-    global failures
-    failures += 1
+    failed.append(msg)
     print(f"FAIL  {msg}", flush=True)
+
+
+def trace() -> None:
+    """Print the traceback to stdout, not stderr.
+
+    GitHub Actions interleaves the two streams unpredictably, which once put a traceback
+    *below* the summary and made a 2-failure run look like a 1-failure run. One stream
+    keeps the log readable in order.
+    """
+    traceback.print_exc(file=sys.stdout)
+    sys.stdout.flush()
+
+
+class _RateLimited(RuntimeError):
+    """Refused for quota reasons, not because the source changed. Same class of problem as
+    an IP block: a hosting concern, so it reports as BLOCKED rather than FAIL."""
 
 
 def blocked_from_here(source: str, msg: str) -> None:
@@ -102,14 +121,14 @@ def check_fpl_api() -> None:
         print(f"      penalty takers={setp}  players with news={newsy}  "
               f"scout_risks populated={risks}  statuses={statuses}")
     except Exception:
-        bad("bootstrap-static"); traceback.print_exc()
+        bad("bootstrap-static"); trace()
 
     try:
         f = s.get(f"{base}/fixtures/", timeout=60).json()
         ok(f"fixtures: {len(f)} rows x {len(f[0])} fields "
            f"(FDR present: {'team_h_difficulty' in f[0]})")
     except Exception:
-        bad("fixtures"); traceback.print_exc()
+        bad("fixtures"); trace()
 
     try:
         pid = b["elements"][0]["id"]
@@ -117,7 +136,7 @@ def check_fpl_api() -> None:
         ok(f"element-summary/{pid}: history={len(es['history'])} "
            f"history_past={len(es['history_past'])} fixtures={len(es['fixtures'])}")
     except Exception:
-        bad("element-summary"); traceback.print_exc()
+        bad("element-summary"); trace()
 
 
 # --------------------------------------------------------------------------- #
@@ -153,7 +172,7 @@ def check_understat() -> None:
         shots = us.read_shot_events().reset_index()
         ok(f"read_shot_events: {len(shots)} rows x {len(shots.columns)} cols")
     except Exception:
-        bad("understat"); traceback.print_exc()
+        bad("understat"); trace()
 
 
 def check_sofascore() -> None:
@@ -193,7 +212,7 @@ def check_sofascore() -> None:
     except SofascoreBlocked as exc:
         blocked_from_here("sofascore", f"sofascore: {exc}")
     except Exception:
-        bad("sofascore"); traceback.print_exc()
+        bad("sofascore"); trace()
 
 
 def check_clubelo() -> None:
@@ -206,7 +225,7 @@ def check_clubelo() -> None:
         ok(f"Arsenal: {len(lines) - 1} rows | header={lines[0]}")
         print(f"      latest: {lines[-1]}")
     except Exception:
-        bad("clubelo"); traceback.print_exc()
+        bad("clubelo"); trace()
 
 
 def check_football_data_couk() -> None:
@@ -225,7 +244,7 @@ def check_football_data_couk() -> None:
             cols = lines[0].split(",")
             ok(f"{season}: {len(lines) - 1} rows x {len(cols)} cols")
         except Exception:
-            bad(f"football-data.co.uk {season}"); traceback.print_exc()
+            bad(f"football-data.co.uk {season}"); trace()
 
 
 # --------------------------------------------------------------------------- #
@@ -234,21 +253,55 @@ def check_football_data_couk() -> None:
 
 def check_fpl_core_insights() -> None:
     hdr("olbauday/FPL-Core-Insights — GitHub CSV mirror (Tier 3, cross-check)")
+    import os
+
     import requests
+
     s = requests.Session()
     s.headers.update({"User-Agent": BROWSER_UA, "Accept": "application/vnd.github+json"})
+
+    # Unauthenticated GitHub API is 60 requests/hour *per IP*, and Actions runners share
+    # IPs — so this check crashed in CI on a rate-limit response. GITHUB_TOKEN is provided
+    # automatically inside Actions and lifts the limit well clear of any real usage.
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        s.headers["Authorization"] = f"Bearer {token}"
+    print(f"      auth: {'GITHUB_TOKEN' if token else 'anonymous (60 req/hour per IP)'}")
+
     repo = "https://api.github.com/repos/olbauday/FPL-Core-Insights"
+
+    def api(path: str):
+        """Return parsed JSON, or raise RateLimited / RuntimeError with GitHub's reason.
+
+        The API answers errors with a JSON *object* where success gives an array, which is
+        why a bare `c[0]` produced `KeyError: 0` instead of anything diagnosable.
+        """
+        resp = s.get(f"{repo}{path}", timeout=45)
+        payload = resp.json()
+        if isinstance(payload, dict) and "message" in payload:
+            msg = payload["message"]
+            if resp.status_code in (403, 429) or "rate limit" in msg.lower():
+                raise _RateLimited(f"{resp.status_code}: {msg}")
+            raise RuntimeError(f"GitHub {resp.status_code}: {msg}")
+        return payload
+
     try:
-        c = s.get(f"{repo}/commits?per_page=1", timeout=45).json()
-        ok(f"last commit: {c[0]['commit']['author']['date']} — "
-           f"{c[0]['commit']['message'].splitlines()[0]}")
-        t = s.get(f"{repo}/contents/data/2026-2027", timeout=45).json()
-        if isinstance(t, list):
-            ok(f"data/2026-2027: {[e['name'] for e in t]}")
+        commits = api("/commits?per_page=1")
+        if not commits:
+            bad("fpl-core-insights: repository has no commits")
+            return
+        head = commits[0]["commit"]
+        ok(f"last commit: {head['author']['date']} — {head['message'].splitlines()[0]}")
+
+        tree = api("/contents/data/2026-2027")
+        if isinstance(tree, list):
+            ok(f"data/2026-2027: {sorted(e['name'] for e in tree)}")
         else:
-            bad(f"data/2026-2027 not a directory listing: {t}")
+            bad(f"data/2026-2027 is not a directory listing: {tree!r}")
+    except _RateLimited as exc:
+        blocked_from_here("fpl-core-insights", f"fpl-core-insights rate-limited — {exc}")
     except Exception:
-        bad("fpl-core-insights"); traceback.print_exc()
+        bad("fpl-core-insights"); trace()
 
 
 # --------------------------------------------------------------------------- #
@@ -276,15 +329,17 @@ def main() -> int:
             fn()
 
     print(f"\n{'=' * 72}")
-    print(f"{failures} FAILED check(s)")
+    # Name them. A bare count once read as "1 failure" while the log actually held two,
+    # because the second traceback had been interleaved out of view.
+    print(f"{len(failed)} FAILED" + (f": {', '.join(failed)}" if failed else ""))
     if blocked:
         print(f"{len(blocked)} BLOCKED from this network: {', '.join(blocked)}")
-        print("  The source is alive but refuses this IP. On GitHub Actions this is")
-        print("  expected for Sofascore (datacenter ranges are filtered) — run that")
-        print("  ingest from a residential connection or a self-hosted runner.")
-        print("  Use --strict to fail the build on blocked sources too.")
+        print("  Alive, but refusing this IP or quota — a hosting problem, not a code one.")
+        print("  Sofascore filters datacenter ranges, so it is expected to be blocked on")
+        print("  GitHub Actions; run that ingest from a residential connection or a")
+        print("  self-hosted runner. Use --strict to fail the build on blocked sources.")
     print("=" * 72)
-    return failures + (len(blocked) if strict else 0)
+    return len(failed) + (len(blocked) if strict else 0)
 
 
 if __name__ == "__main__":

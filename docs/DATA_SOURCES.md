@@ -228,14 +228,21 @@ GET api.sofascore.com/api/v1/unique-tournament/17/season/{season_id}/statistics
 `fields` is not cosmetic — Sofascore returns only the fields you ask for, so a name
 missing from `STAT_NAMES` becomes a silently absent column.
 
-**Open question: does Sofascore serve GitHub Actions runners?** Removing the import
-failure was necessary but doesn't answer it — datacenter IP ranges are commonly filtered,
-and the API call from a runner is still untested. The client raises a distinct
-`SofascoreBlocked` on 403/429 and the probe reports it as `BLOCKED` rather than `FAIL`, so
-CI stays meaningful either way. If it turns out to be blocked, the options are a
-self-hosted runner on a home connection, running just this job locally on a schedule, or
-falling back to FPL-Core-Insights for per-match player stats. Everything else in the stack
-runs fine from Actions.
+**Confirmed: Sofascore does NOT serve GitHub Actions runners.** Tested in CI 2026-07-26
+after the import failure was removed — the API returns 403 to runner IPs while serving a
+home connection fine. Datacenter ranges are filtered. This is settled, not a transient
+error, so **Sofascore cannot be part of the Actions-hosted sync.** The client raises
+`SofascoreBlocked` and the probe reports `BLOCKED` rather than `FAIL` so CI stays green and
+honest about it.
+
+Consequence for the plan: Sofascore is demoted to **optional, locally-run enrichment**. Its
+genuinely unique contributions for FPL are narrow — `rating`, `goalsPrevented`,
+`bigChancesCreated`/`bigChancesMissed`, `possessionWonAttThird`, and the keeper pack —
+because the FPL API already supplies xG/xA/xGC and the DEFCON components, and Understat
+supplies xA/xGChain/xGBuildup/PPDA/shots. **FPL-Core-Insights (§4) covers most of the gap
+at better granularity** (per-match rather than per-season) and is reachable from Actions,
+being GitHub-hosted. Prefer it; run Sofascore from a residential connection only if a
+specific metric proves necessary.
 
 Stats not available anywhere else in our free stack: `rating`, `totwAppearances`,
 `goalsPrevented`, `bigChancesCreated`, `bigChancesMissed`, `possessionWonAttThird`,
