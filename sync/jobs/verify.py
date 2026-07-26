@@ -18,6 +18,10 @@ COUNTS = (
     "seasons", "teams", "team_seasons", "players", "player_seasons",
     "events", "fixtures", "player_season_totals", "player_gw_stats",
     "player_snapshots", "player_price_events", "sync_runs",
+    # Tier 2 enrichment
+    "understat_team_match", "understat_shots", "understat_player_season",
+    "club_elo", "match_odds", "core_insights_player_match",
+    "player_external_ids", "unmatched_names",
 )
 
 
@@ -78,9 +82,29 @@ def run(
             from sync_runs order by started_at desc limit 8
         """)))
 
-        errors = db.fetch(conn, "select count(*) as n from sync_runs where status = 'error'")
-        if errors[0]["n"]:
-            problems.append(f"{errors[0]['n']} sync_runs rows have status='error'")
+        # Flag a job whose *latest* run failed, not every failure ever recorded. Counting
+        # historical errors makes verify permanently red once anything has ever broken,
+        # which trains you to ignore it — and a resolved failure is not a current problem.
+        broken = db.fetch(conn, """
+            select distinct on (job) job, status,
+                   to_char(started_at, 'MM-DD HH24:MI') as started, left(error, 120) as err
+            from sync_runs order by job, started_at desc
+        """)
+        for row in broken:
+            if row["status"] == "error":
+                problems.append(f"{row['job']}: latest run failed ({row['started']}) "
+                                f"— {row['err']}")
+            elif row["status"] == "running":
+                problems.append(f"{row['job']}: latest run still 'running' "
+                                f"({row['started']})")
+
+        healed = db.fetch(conn, """
+            select count(*) as n from sync_runs
+            where status = 'error' and started_at > now() - interval '7 days'
+        """)
+        if healed[0]["n"]:
+            print(f"\n    note: {healed[0]['n']} failed run(s) in the last 7 days, "
+                  f"all since recovered")
 
         # Rows stuck on 'running' mean a process died without recording why. They are
         # invisible to sync_freshness (which only reads 'ok' and 'error'), so they need
@@ -147,6 +171,104 @@ def run(
             from player_snapshots
             group by captured_at order by captured_at desc limit 8
         """)))
+
+        # ---- Tier 2 enrichment sanity ------------------------------------------ #
+        # Row counts prove a job ran; these prove the numbers mean something.
+
+        if counts["understat_team_match"]:
+            print("\n=== Understat team-match coverage + PPDA sanity ===")
+            print(_fmt(db.fetch(conn, """
+                select season,
+                       count(*) as team_rows,
+                       count(distinct game_id) as matches,
+                       count(*) filter (where team_code is null) as unresolved_teams,
+                       round(min(ppda), 1) as ppda_min,
+                       round(avg(ppda), 1) as ppda_avg,
+                       round(max(ppda), 1) as ppda_max
+                from understat_team_match group by season order by season desc
+            """)))
+            # PPDA is passes allowed per defensive action; real values sit roughly 4-30.
+            # Anything outside that means a column got mixed up somewhere upstream.
+            odd = db.fetch(conn, """
+                select count(*) as n from understat_team_match
+                where ppda is not null and (ppda <= 0 or ppda > 100)
+            """)
+            if odd[0]["n"]:
+                problems.append(f"{odd[0]['n']} understat_team_match rows have "
+                                f"implausible PPDA (<=0 or >100)")
+
+            # Each match must yield exactly two team rows; anything else means the
+            # home/away split dropped or duplicated a side.
+            lopsided = db.fetch(conn, """
+                select count(*) as n from (
+                  select game_id from understat_team_match
+                  group by season, game_id having count(*) <> 2
+                ) t
+            """)
+            if lopsided[0]["n"]:
+                problems.append(f"{lopsided[0]['n']} Understat matches do not have "
+                                f"exactly 2 team rows")
+
+        if counts["match_odds"]:
+            print("\n=== Odds: de-vigged probabilities ===")
+            print(_fmt(db.fetch(conn, """
+                select season, count(*) as matches,
+                       count(*) filter (where p_home is not null) as with_1x2,
+                       count(*) filter (where p_over_25 is not null) as with_ou25,
+                       count(*) filter (where home_team_code is null
+                                          or away_team_code is null) as unresolved_side
+                from match_odds group by season order by season desc
+            """)))
+            # De-vigging normalises to 1 by construction, so a drift here means the
+            # arithmetic broke rather than the market being unusual.
+            bad = db.fetch(conn, """
+                select count(*) as n from match_odds
+                where p_home is not null
+                  and abs((p_home + p_draw + p_away) - 1) > 0.001
+            """)
+            if bad[0]["n"]:
+                problems.append(f"{bad[0]['n']} match_odds rows where de-vigged 1X2 "
+                                f"probabilities don't sum to 1")
+
+        if counts["club_elo"]:
+            print("\n=== ClubElo ===")
+            print(_fmt(db.fetch(conn, """
+                select count(distinct club) as clubs, count(*) as rows,
+                       count(*) filter (where team_code is null) as unresolved,
+                       min(valid_from) as earliest, max(valid_from) as latest
+                from club_elo
+            """)))
+            # 20 clubs are fetched by name; a short count means a silent partial fetch,
+            # which is exactly what a space in the URL caused once.
+            clubs = db.fetch(conn, "select count(distinct club) as n from club_elo")
+            if clubs[0]["n"] < 20:
+                problems.append(f"club_elo has only {clubs[0]['n']} distinct clubs, "
+                                f"expected 20 — likely a silent partial fetch")
+
+        if counts["core_insights_player_match"]:
+            print("\n=== FPL-Core-Insights per-match ===")
+            print(_fmt(db.fetch(conn, """
+                select season, count(*) as rows,
+                       count(distinct player_code) as players,
+                       count(distinct event) as gameweeks,
+                       count(*) filter (where xg is not null) as with_xg,
+                       count(*) filter (where distance_covered is not null) as with_physical
+                from core_insights_player_match group by season order by season desc
+            """)))
+
+        if counts["player_external_ids"]:
+            print("\n=== Identity resolution ===")
+            print(_fmt(db.fetch(conn, """
+                select source, count(*) as mapped,
+                       round(min(confidence), 2) as min_conf,
+                       round(avg(confidence), 3) as avg_conf
+                from player_external_ids group by source order by source
+            """)))
+            print(_fmt(db.fetch(conn, """
+                select source, kind, season, count(*) as unmatched
+                from unmatched_names group by source, kind, season
+                order by source, season
+            """)))
 
         print("\n=== storage (Supabase free tier = 500 MB) ===")
         print(_fmt(db.fetch(conn, """

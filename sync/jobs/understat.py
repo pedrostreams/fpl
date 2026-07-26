@@ -80,6 +80,7 @@ def run(
     *,
     dry_run: bool = False,
     season: str | None = None,
+    rematch: bool = False,
 ) -> dict[str, Any]:
     import soccerdata as sd
 
@@ -120,6 +121,7 @@ def run(
         with db.sync_run(conn, "understat") as state:
             teams = _resolve.load_team_resolver(conn)
             resolver = _resolve.load_player_resolver(conn, config.season_label(bootstrap["events"]))
+            cleared = _resolve.clear_ids(conn, SOURCE) if rematch else 0
             known = _resolve.load_existing_ids(conn, SOURCE)
 
             # ---- team-match: one row per team, opponent figures denormalised in ---- #
@@ -153,9 +155,10 @@ def run(
                     })
 
             # ---- player identity, resolved once and reused ------------------------ #
-            new_ids: list[dict] = []
             unmatched: list[dict] = []
             code_by_uid: dict[str, int] = dict(known)
+            # (external_id, player_code, confidence, row) for dedupe_by_player.
+            candidates: list[tuple[str, int, float, dict]] = []
 
             for _, r in players.iterrows():
                 uid = str(_clean(r.get("player_id")) or "")
@@ -169,8 +172,7 @@ def run(
                         "external_id": uid, "raw_name": name, "raw_team": raw_team,
                     })
                     continue
-                code_by_uid[uid] = hit.player_code
-                new_ids.append({
+                candidates.append((uid, hit.player_code, hit.confidence, {
                     "player_code": hit.player_code,
                     "source": SOURCE,
                     "external_id": uid,
@@ -178,7 +180,15 @@ def run(
                     "external_team": raw_team,
                     "method": hit.method,
                     "confidence": hit.confidence,
-                })
+                }))
+
+            # Two external players resolving to one FPL player means at least one is wrong.
+            # Keep the confident one and log the other rather than letting the unique
+            # constraint drop it silently.
+            new_ids, collided = _resolve.dedupe_by_player(candidates)
+            for row in new_ids:
+                code_by_uid[row["external_id"]] = row["player_code"]
+            unmatched.extend(collided)
 
             player_rows = [{
                 "season": _season_label(r["season"]),
@@ -238,12 +248,17 @@ def run(
 
             detail.update({
                 "team_match_rows_written": len(tm_rows),
+                "mappings_cleared_for_rematch": cleared,
                 "newly_matched_players": len(new_ids),
                 "already_matched": len(known),
+                "collisions_rejected": len(collided),
+                "collision_sample": [c["reason"] for c in collided[:5]],
                 "unmatched_players": len(unmatched),
-                "unmatched_sample": [u["raw_name"] for u in unmatched[:10]],
+                "unmatched_sample": [u.get("raw_name") for u in unmatched[:10]],
                 "unknown_teams": teams.report(),
                 "shots_linked_to_fpl": sum(1 for s in shot_rows if s["player_code"]),
+                "player_rows_linked_to_fpl": sum(
+                    1 for p in player_rows if p["player_code"]),
             })
             state["rows"] = written
             state["detail"] = detail

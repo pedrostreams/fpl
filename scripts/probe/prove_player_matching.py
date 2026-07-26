@@ -19,8 +19,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from sync.matching.players import FplPlayer, PlayerResolver, normalise  # noqa: E402
 
 ARS, AVL, CHE, NEW, MCI = 3, 7, 8, 4, 43
+BOU, CRY, LIV, SUN, TOT, BRE, NFO, FUL = 91, 31, 14, 56, 6, 94, 17, 54
 
-# A pool shaped like the real one, including the collisions that make naive matching unsafe.
+# A pool shaped like the real one, including every collision that made naive matching
+# produce confident nonsense on the first live run.
 POOL = [
     FplPlayer(154561, "David", "Raya Martín", "Raya", None, ARS),
     FplPlayer(184029, "Martin", "Ødegaard", "Ødegaard", None, ARS),
@@ -30,12 +32,33 @@ POOL = [
     FplPlayer(111317, "David", "Brooks", "Brooks", None, AVL),
     FplPlayer(213292, "David", "Akintola", "Akintola", None, CHE),
     FplPlayer(67089, "Martin", "Dubravka", "Dubravka", None, NEW),
-    FplPlayer(499604, "Rayan", "Vitor Simplício Rocha", "Rayan", "Rayan", MCI),
     FplPlayer(7083, "Christian", "Nørgaard", "Nørgaard", None, ARS),
     FplPlayer(1001, "João", "Pedro Junqueira de Jesus", "João Pedro", None, CHE),
     # Two players sharing a surname at different clubs — surname alone must not resolve.
-    FplPlayer(2001, "Amad", "Diallo", "Diallo", None, NEW),
+    FplPlayer(2001, "Amad", "Diallo", "Amad", None, NEW),
     FplPlayer(2002, "Ibrahima", "Diallo", "Diallo", None, AVL),
+    # --- Nickname / truncation cases that must still match --------------------- #
+    FplPlayer(3001, "Junior", "Kroupi", "Kroupi.Jr", None, BOU),
+    FplPlayer(3002, "Destiny", "Udogie", "Udogie", None, TOT),
+    FplPlayer(3003, "Joe", "Gomez", "Gomez", None, LIV),
+    FplPlayer(3004, "Matty", "Cash", "Cash", None, AVL),
+    FplPlayer(3005, "Tino", "Livramento", "Livramento", None, NEW),
+    FplPlayer(3006, "Josh", "King", "King", None, FUL),
+    FplPlayer(3007, "Đorđe", "Petrović", "Petrović", None, BOU),
+    FplPlayer(3008, "Trey", "Nyoni", "Nyoni", None, LIV),
+    FplPlayer(3009, "Benjamin", "White", "White", None, ARS),
+    FplPlayer(3010, "Alisson", "Becker", "A.Becker", None, LIV),
+    FplPlayer(3011, "Sávio", "Moreira de Oliveira", "Savinho", None, MCI),
+    FplPlayer(3012, "Pape Matar", "Sarr", "P.M.Sarr", None, TOT),
+    # --- The false-positive traps, all real ----------------------------------- #
+    FplPlayer(4001, "Nicolas", "Jackson", "N.Jackson", None, CHE),
+    FplPlayer(4002, "Will", "Dennis", "Dennis", None, BOU),
+    FplPlayer(4003, "Harvey", "Barnes", "Barnes", None, NEW),
+    FplPlayer(4004, "Cristhian", "Mosquera", "Mosquera", None, ARS),
+    FplPlayer(4005, "Jørgen", "Strand Larsen", "Strand Larsen", None, MCI),
+    FplPlayer(4006, "Victor", "Munoz", "Munoz", None, LIV),
+    FplPlayer(4007, "Rayan", "Cherki", "Cherki", None, MCI),
+    FplPlayer(4008, "Gabriel", "Fernando de Jesus", "G.Jesus", "Gabriel Jesus", ARS),
 ]
 
 # (external name, external team code or None, expected player_code)
@@ -47,25 +70,52 @@ SHOULD_MATCH = [
     # Precomposed Nordic letters, which NFKD does not decompose.
     ("Martin Odegaard", ARS, 184029),
     ("Christian Norgaard", ARS, 7083),
+    # Đ transliterates to 'dj', which is what Understat writes.
+    ("Djordje Petrovic", BOU, 3007),
     # Single-token given name where FPL stores the full legal name.
     ("Kepa", ARS, 109745),
+    ("Alisson", LIV, 3010),
+    ("Sávio", MCI, 3011),
     # Straightforward exact matches must keep working.
     ("David Brooks", AVL, 111317),
     ("Joao Pedro", CHE, 1001),
+    ("Gabriel Jesus", ARS, 4008),
+    # Nicknames and truncations — the reason the forename check has to be generous.
+    ("Joshua King", FUL, 3006),          # Josh   <- Joshua   (prefix)
+    ("Joseph Gomez", LIV, 3003),         # Joe    <- Joseph   (shared 2 chars)
+    ("Matthew Cash", AVL, 3004),         # Matty  <- Matthew  (shared 2 chars)
+    ("Valentino Livramento", NEW, 3005),  # Tino  <- Valentino (contained)
+    ("Treymaurice Nyoni", LIV, 3008),    # Trey   <- Treymaurice (prefix)
+    ("Ben White", ARS, 3009),            # Ben    <- Benjamin (prefix)
+    ("Pape Sarr", TOT, 3012),
+    # The forename may sit in any token, not just the first.
+    ("Eli Junior Kroupi", BOU, 3001),
+    ("Iyenoma Destiny Udogie", TOT, 3002),
     # Ambiguous surname, but the club disambiguates.
-    ("Diallo", NEW, 2001),
     ("Diallo", AVL, 2002),
     # A transferred player: enrichment carries last season's club, so a wrong team must
     # not prevent an otherwise unique name match.
     ("Martin Odegaard", MCI, 184029),
 ]
 
-# Cases where returning *anything* would be a bug.
+# Cases where returning *anything* would be a bug. Every entry below the divider is a real
+# false positive the first live run produced — all ten shared a surname and disagreed on
+# the forename, which is exactly what the forename check now vetoes.
 SHOULD_NOT_MATCH = [
-    ("Diallo", None),                 # ambiguous surname, no club to break the tie
     ("Erling Haaland", None),         # not in the pool at all
     ("Xyz Nonexistent", ARS),
     ("David", None),                  # three Davids, no club
+    # ---- observed false positives, 2026-07-26 -------------------------------- #
+    ("Jackson Tchatchoua", None),     # was -> Nicolas Jackson
+    ("Dennis Cirkin", SUN),           # was -> Will Dennis
+    ("Ashley Barnes", None),          # was -> Harvey Barnes
+    ("Yerson Mosquera", None),        # was -> Cristhian Mosquera
+    ("Jacob Bruun Larsen", None),     # was -> Jørgen Strand Larsen
+    ("Daniel Muñoz", CRY),            # was -> Victor Munoz (different club, too)
+    ("Mathis Cherki", MCI),           # was -> Rayan Cherki (same club; name must decide)
+    ("Fernando López", None),         # was -> Gabriel Fernando de Jesus
+    ("Luis Guilherme", None),         # was -> Dário Luís Essugo
+    ("Florentino Luís", None),        # was -> Dário Luís Essugo
 ]
 
 

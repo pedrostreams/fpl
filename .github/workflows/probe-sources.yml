@@ -44,6 +44,12 @@ jobs:
       - name: Prove snapshot insert-on-change logic
         run: python scripts/probe/prove_snapshot_logic.py
 
+      # Name matching is the other place a bug is silent: a wrong match attributes one
+      # player's xG to another and nothing errors. Ten false positives reached the database
+      # before these cases existed.
+      - name: Prove player name matching
+        run: python scripts/probe/prove_player_matching.py
+
       - name: Dry-run every sync job
         run: |
           python -m sync.cli dimensions --dry-run --no-cache

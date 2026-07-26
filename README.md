@@ -94,15 +94,27 @@ select * from sync_freshness;
 
 ## Status
 
-Phase 0 (research) and Phase 1 (core FPL sync) are in and **running against Supabase**.
-First real sync 2026-07-26: 558 players, 380 fixtures, 2 568 season-total rows across 21
-seasons, 558 snapshots. `verify` reports all checks passing at 1.7 MB of 500 MB.
+Phases 0–2 are in and **running against Supabase**. As of 2026-07-26, 32 MB of the 500 MB
+free tier, `verify` all green:
 
-Three data constraints found in that first sync — read
-[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) §2.1 before building on the aggregates:
-`history_past` is authoritative for completed seasons (bootstrap disagrees for loan and
-transfer cases), expected stats only exist from 2022/23 onward, and 19% of the player pool
-has no 2025/26 record.
+| Table | Rows | Source |
+|---|---|---|
+| `players` / `player_seasons` | 558 | FPL API |
+| `fixtures` | 380 | FPL API |
+| `player_season_totals` | 2 568 | FPL API, 21 seasons back to 2006/07 |
+| `player_snapshots` | 558 | hourly, insert-on-change |
+| `understat_team_match` | 760 | **PPDA + deep completions**, 380/380 matches |
+| `understat_shots` | 9 524 | x/y position, body part, situation |
+| `core_insights_player_match` | 12 242 | per-match stats incl. physical data |
+| `club_elo` | 21 935 | 20 clubs since 2015 |
+| `match_odds` | 380 | de-vigged 1X2 + O/U 2.5 |
+| `player_external_ids` | 399 | FPL ↔ Understat, avg confidence 0.976 |
 
-Phase 2 (Understat / Sofascore / ClubElo / odds enrichment) is next — see
-[docs/PLAN.md](docs/PLAN.md).
+**Read before building on any of it:**
+[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) §2.1 — `history_past` is authoritative for
+completed seasons (bootstrap disagrees for loan/transfer cases), expected stats only exist
+from 2022/23 onward, and 19% of the player pool has no 2025/26 record.
+[CLAUDE.md](CLAUDE.md) — the name-matching rules, which exist because the first run stored
+ten false positives.
+
+Phase 3 (derived views) is next — see [docs/PLAN.md](docs/PLAN.md).

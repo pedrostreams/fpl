@@ -16,16 +16,21 @@ not built yet). Sync writes straight to Postgres via `psycopg`; there is no
 ## Commands
 
 ```bash
-python scripts/probe/probe_sources.py          # health-check every source; exit = #failures
-python -m sync.cli all --dry-run               # parse live payloads, write nothing
-python -m sync.cli snapshot                    # the hourly job
-python -m sync.cli history --limit 20          # element-summary, capped
-python -m sync.cli verify                      # post-sync sanity + storage growth
+python scripts/probe/probe_sources.py            # health-check every source; exit = #failures
+python scripts/probe/prove_snapshot_logic.py     # insert-on-change regression, no DB needed
+python scripts/probe/prove_player_matching.py    # 44 name-matching cases, no DB needed
 
-psql "$DATABASE_URL" -f supabase/migrations/0001_fpl_core.sql   # idempotent
+python scripts/migrate.py                        # apply all migrations (idempotent)
+
+python -m sync.cli all --dry-run                 # FPL core: dimensions, history, snapshot
+python -m sync.cli snapshot                      # the hourly job
+python -m sync.cli enrich                        # Tier 2: understat, core_insights, clubelo, odds
+python -m sync.cli understat --rematch           # re-resolve identities from scratch
+python -m sync.cli verify                        # post-sync sanity + storage growth
 ```
 
-There is no test runner. `--dry-run` plus the probe script are the verification path.
+There is no test runner. `--dry-run`, the probe scripts, and `verify` are the verification
+path. The two `prove_*` scripts run without a database or network, so they gate CI.
 
 ## The three things that will bite you
 
@@ -53,6 +58,42 @@ There is no test runner. `--dry-run` plus the probe script are the verification 
    `docs/SYNC_PLAN.md` §8 first. Cumulative `transfers_in`/`transfers_out` are
    deliberately *not* watched: within a gameweek they duplicate the `_event` counters and
    would force a row per player per hour.
+
+## Cross-source name matching — where a bug is invisible
+
+`sync/matching/players.py`. A wrong match doesn't error: it silently attributes one
+player's xG to another. The first live run stored **ten false positives**, every one of them
+a shared surname with an incompatible forename — `Jackson Tchatchoua` → `Nicolas Jackson`,
+`Ashley Barnes` → `Harvey Barnes`, `Daniel Muñoz` → `Victor Munoz`. Three rules came out of
+fixing that, and none of them is optional:
+
+1. **A shared surname is not a match.** The FPL forename must be compatible with *some*
+   token of the incoming name (`_forename_agrees`). Any token, not just the first —
+   Understat's `Eli Junior Kroupi` is FPL's `Junior Kroupi`. Compatibility is deliberately
+   generous (prefix, containment, or two shared leading characters) because real pairs
+   include Josh/Joshua, Joe/Joseph, Matty/Matthew and Tino/Valentino.
+2. **Never use the incoming forename as a surname candidate.** There is no "first token
+   only" variant, and adding one back is how four of the ten false positives happened.
+   Genuine single-name players (Kepa, Alisson, Sávio, Jair) have one token and are already
+   covered.
+3. **Team breaks ties; it never vetoes.** Enrichment covers last season while
+   `player_seasons` holds the current club, so a transferred player legitimately differs on
+   each side.
+
+Plus: `Đ`/`đ` transliterate to **`dj`**, not `d` — FPL writes `Đorđe Petrović` where
+Understat writes `Djordje Petrovic`. And `ø`, `æ`, `ł`, `ß` are distinct letters that NFKD
+does *not* decompose, so they need `TRANSLITERATE` rather than diacritic stripping.
+
+`scripts/probe/prove_player_matching.py` holds all of this as 44 regression cases, needing
+no database or network. **Extend it before changing the matcher**, and note the negatives
+matter more than the positives. If you do change the logic, re-resolve with
+`python -m sync.cli understat --rematch` — mappings are sticky, so stored mistakes survive
+otherwise.
+
+Not matching is fine and expected: 138 of 537 Understat players are unresolved because
+they played for relegated clubs or left the league. `unmatched_names` records them, and
+`dedupe_by_player` rejects two external players resolving to one FPL player rather than
+letting a unique constraint drop one silently.
 
 ## Architecture map
 

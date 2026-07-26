@@ -45,7 +45,10 @@ from typing import Iterable
 # this, 'Ødegaard' never matches 'Odegaard'.
 TRANSLITERATE = str.maketrans({
     "ø": "o", "Ø": "o", "æ": "ae", "Æ": "ae", "œ": "oe", "Œ": "oe",
-    "ð": "d", "Ð": "d", "đ": "d", "Đ": "d", "þ": "th", "Þ": "th",
+    "ð": "d", "Ð": "d", "þ": "th", "Þ": "th",
+    # Đ/đ -> 'dj', not 'd': FPL writes 'Đorđe Petrović' where Understat writes 'Djordje
+    # Petrovic', and 'dj' is the transliteration that makes those two meet.
+    "đ": "dj", "Đ": "dj",
     "ł": "l", "Ł": "l", "ß": "ss", "ı": "i", "İ": "i",
     "ħ": "h", "Ħ": "h", "ŋ": "n", "Ŋ": "n", "ʼ": "", "'": "", "'": "",
 })
@@ -119,17 +122,46 @@ def _fpl_keys(p: FplPlayer) -> list[tuple[str, str, float]]:
 
 # Variants of the incoming name, strongest first, with a multiplier for how much the
 # transformation costs in confidence.
+#
+# There is deliberately no "first token only" variant. It looked harmless and was the single
+# largest source of false positives in the first live run: 'Jackson Tchatchoua' matched
+# 'Nicolas Jackson', 'Dennis Cirkin' matched 'Will Dennis', and 'Fernando López' matched
+# 'Gabriel Fernando de Jesus' — each time by treating the incoming forename as a surname.
+# Genuinely single-name players ('Kepa', 'Alisson', 'Sávio', 'Jair') have one token, so
+# `as_given` already covers them against the `first_name` key.
 def _external_variants(name: str) -> list[tuple[str, str, float]]:
     toks = _tokens(name)
     out: list[tuple[str, str, float]] = [("as_given", name, 1.00)]
     if len(toks) > 1:
         out.append(("first+last", f"{toks[0]} {toks[-1]}", 0.98))
         out.append(("last", toks[-1], 0.90))
-        out.append(("first", toks[0], 0.70))
     return [(k, normalise(v), f) for k, v, f in out if normalise(v)]
 
 
 MIN_CONFIDENCE = 0.55
+
+# Rungs trustworthy enough to skip the forename check: they already matched the whole name.
+_WHOLE_NAME_METHODS = {"full_name", "known_name"}
+
+
+def _forename_compatible(a: str, b: str) -> bool:
+    """Could these two be the same person's forename?
+
+    Deliberately generous, because real pairs include Josh/Joshua, Joe/Joseph,
+    Matty/Matthew, Ben/Benjamin, Trey/Treymaurice and Tino/Valentino. Generous enough to
+    accept a nickname, strict enough to reject Ashley/Harvey and Jacob/Jørgen.
+    """
+    a, b = normalise(a), normalise(b)
+    if not a or not b:
+        return True                      # nothing to contradict
+    if a == b:
+        return True
+    if len(a) == 1 or len(b) == 1:
+        return a[0] == b[0]              # an initial, e.g. 'J. Gomez'
+    short, long = sorted((a, b), key=len)
+    if len(short) >= 3 and (long.startswith(short) or short in long):
+        return True                      # Josh/Joshua, Trey/Treymaurice, Tino/Valentino
+    return short[:2] == long[:2]         # Joe/Joseph, Matty/Matthew, Yeremi/Yeremy
 
 
 class PlayerResolver:
@@ -148,6 +180,26 @@ class PlayerResolver:
                 if prev is None or weight > prev[1]:
                     bucket[p.code] = (method, weight)
 
+    def _forename_agrees(self, name: str, player: FplPlayer) -> bool:
+        """Does the FPL forename appear, compatibly, anywhere in the incoming name?
+
+        This is the veto that stops surname-only agreement from becoming a match. Every
+        false positive in the first live run shared a surname and disagreed on the forename:
+        Ashley/Harvey Barnes, Yerson/Cristhian Mosquera, Jacob Bruun/Jørgen Strand Larsen,
+        Mathis/Rayan Cherki, Daniel/Victor Muñoz.
+
+        Any token is allowed to carry the forename, not just the first, because sources
+        disagree about where it sits: Understat's 'Eli Junior Kroupi' is FPL's 'Junior
+        Kroupi', and 'Iyenoma Destiny Udogie' is 'Destiny Udogie'.
+        """
+        first = player.first_name
+        if not first:
+            return True
+        tokens = _tokens(name)
+        if len(tokens) < 2:
+            return True   # single-name players carry no forename to contradict
+        return any(_forename_compatible(first, t) for t in tokens)
+
     def resolve(self, name: str, team_code: int | None = None) -> Match | None:
         """Best match for an external name, or None.
 
@@ -158,6 +210,15 @@ class PlayerResolver:
 
         for variant_kind, key, factor in _external_variants(name):
             bucket = self._index.get(key)
+            if not bucket:
+                continue
+
+            # Drop candidates whose forename contradicts the incoming name, unless the whole
+            # name already matched.
+            bucket = {
+                c: (m, w) for c, (m, w) in bucket.items()
+                if m in _WHOLE_NAME_METHODS or self._forename_agrees(name, self._by_code[c])
+            }
             if not bucket:
                 continue
 

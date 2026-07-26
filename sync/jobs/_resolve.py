@@ -64,6 +64,54 @@ def save_new_ids(conn, source: str, rows: Iterable[dict[str, Any]]) -> int:
     return db.insert_ignore(conn, "player_external_ids", list(rows), None)
 
 
+def clear_ids(conn, source: str) -> int:
+    """Drop every mapping for a source so the cascade runs fresh.
+
+    Mappings are sticky by design, which is right while the matcher is stable and wrong the
+    moment it improves: the first live run stored ten false positives, and without this they
+    would survive every future run. Use when the matching logic changes — and note it also
+    discards manual corrections, so re-apply those afterwards.
+    """
+    with conn.cursor() as cur:
+        cur.execute("delete from player_external_ids where source = %s", (source,))
+        n = cur.rowcount
+    conn.commit()
+    return n
+
+
+def dedupe_by_player(
+    candidates: list[tuple[str, int, float, dict[str, Any]]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Enforce one external id per FPL player, keeping the most confident.
+
+    Two different external players resolving to the same FPL player means at least one is
+    wrong. `player_external_ids` has a unique constraint on (player_code, source), so the
+    loser was previously dropped silently by `on conflict do nothing` — which is how a
+    reported 413 matches became 405 stored rows with no explanation.
+
+    Takes (external_id, player_code, confidence, row) and returns (winners, losers).
+    """
+    best: dict[int, tuple[float, str, dict[str, Any]]] = {}
+    losers: list[dict[str, Any]] = []
+
+    for external_id, player_code, confidence, row in sorted(
+        candidates, key=lambda c: -c[2]
+    ):
+        current = best.get(player_code)
+        if current is None:
+            best[player_code] = (confidence, external_id, row)
+        else:
+            losers.append({
+                "external_id": external_id,
+                "raw_name": row.get("external_name"),
+                "raw_team": row.get("external_team"),
+                "reason": f"collided with {current[1]} (conf {current[0]}) "
+                          f"on player_code {player_code}",
+            })
+
+    return [row for _, _, row in best.values()], losers
+
+
 def clear_unmatched(conn, source: str, kind: str, season: str) -> int:
     """Drop this source/season's previous unmatched rows before re-logging.
 
