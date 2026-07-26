@@ -33,6 +33,12 @@ jobs:
       - name: Probe all sources
         run: python scripts/probe/probe_sources.py
 
+      # Guards the one logic path whose silent failure is unrecoverable: if the
+      # insert-on-change comparison ever reported "unchanged" for everything, snapshots
+      # would stop being written and the run would still look clean.
+      - name: Prove snapshot insert-on-change logic
+        run: python scripts/probe/prove_snapshot_logic.py
+
       - name: Dry-run every sync job
         run: |
           python -m sync.cli dimensions --dry-run --no-cache
