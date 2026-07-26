@@ -45,8 +45,8 @@ Four things drive every decision in this document:
 | Source | Cost | Key needed | Verified 2026-07-26 | Verdict |
 |---|---|---|---|---|
 | **Official FPL API** | Free | No | ✅ 558 players × 105 fields, 380 fixtures, 38 events | **Tier 1 — core** |
-| **Understat** (via `soccerdata`) | Free | No | ✅ 528 players, 346 team-matches, 8 616 shots | **Tier 2 — enrichment** |
-| **Sofascore** (via `ScraperFC` + `curl_cffi`) | Free | No | ✅ 537 players × 114 stats | **Tier 2 — enrichment** |
+| **Understat** (via `soccerdata`) | Free | No | ✅ 537 players, **380/380** team-matches, 9 524 shots | **Tier 2 — enrichment** |
+| **Sofascore** (direct API + `curl_cffi`) | Free | No | ✅ 537 players × 116 stats. ⚠️ may 403 from datacenter IPs | **Tier 2 — enrichment** |
 | **ClubElo** | Free | No | ✅ 6 508 rows for Arsenal; Elo 2063.76, rank 1 | **Tier 2 — team strength** |
 | **football-data.co.uk** | Free | No | ✅ 25/26: 380 rows × 132 cols (odds). 26/27: 404 (not started) | **Tier 2 — odds** |
 | **olbauday/FPL-Core-Insights** | Free | No | ✅ auto-commit 2026-07-26 08:18 UTC; `data/2026-2027/` populated | **Tier 3 — cross-check** |
@@ -184,14 +184,18 @@ Via `soccerdata` 1.9.0. Methods verified present: `read_leagues`, `read_seasons`
 
 | Method | Verified shape (PL 2025/26) | Why it matters |
 |---|---|---|
-| `read_team_match_stats()` | 346 rows × 29 cols | **`home_ppda` / `away_ppda`** and **`home_deep_completions` / `away_deep_completions`**, plus per-match `xg`, `np_xg`, `np_xg_difference`, `expected_points`. This is the direct answer to "which teams play defensive football" — PPDA is passes-allowed-per-defensive-action, so **low PPDA = aggressive high press**, high PPDA = sit deep. Nothing in the FPL API comes close. |
-| `read_shot_events()` | 8 616 rows × 21 cols | Per-shot `xg`, `location_x`, `location_y`, `minute`, `body_part`, `situation` (Open Play / set piece / penalty), `result`, `assist_player`. Enables shot maps, box-entry quality, penalty-independent xG, and header-vs-foot threat splits. |
-| `read_player_season_stats()` | 528 rows × 23 cols | `xa`, `xg_chain`, `xg_buildup`, `np_goals`, `np_xg`, `key_passes` — creator metrics the FPL API doesn't expose. |
+| `read_team_match_stats()` | **380 rows** × 29 cols | **`home_ppda` / `away_ppda`** and **`home_deep_completions` / `away_deep_completions`**, plus per-match `xg`, `np_xg`, `np_xg_difference`, `expected_points`. This is the direct answer to "which teams play defensive football" — PPDA is passes-allowed-per-defensive-action, so **low PPDA = aggressive high press**, high PPDA = sit deep. Nothing in the FPL API comes close. |
+| `read_shot_events()` | **9 524 rows** × 21 cols | Per-shot `xg`, `location_x`, `location_y`, `minute`, `body_part`, `situation` (Open Play / set piece / penalty), `result`, `assist_player`. Enables shot maps, box-entry quality, penalty-independent xG, and header-vs-foot threat splits. |
+| `read_player_season_stats()` | 537 rows × 23 cols | `xa`, `xg_chain`, `xg_buildup`, `np_goals`, `np_xg`, `key_passes` — creator metrics the FPL API doesn't expose. |
 | `read_schedule()` | 380 rows × 20 cols | Match-level xG plus `understat.com/match/{id}` URLs and `has_data` flags. |
 
-Caveat: `read_team_match_stats` returned **346 of 380** matches. Cause not yet
-established (Understat gaps vs. `soccerdata` cache). Verify coverage per season before
-relying on completeness; reconcile against `read_schedule().has_data`.
+**Coverage is complete — beware `soccerdata`'s cache.** An earlier probe reported 346 of
+380 team-matches and 528 players, and that was recorded here as a possible Understat gap.
+It wasn't: a CI run with a cold cache returned the full **380** on the same day, and
+clearing `~/soccerdata/data/Understat` locally reproduced 380 immediately. `soccerdata`
+caches aggressively and will happily serve a partial mid-season snapshot forever. **Clear
+the cache before concluding anything about coverage**, and don't trust a short row count.
+The probe now prints a warning instead of silently accepting it.
 
 Understat is described across 2026 sources as one of the last free xG sources standing.
 Treat it as valuable but single-point-of-failure: cache raw responses on disk so a
@@ -199,13 +203,39 @@ future outage doesn't erase history we already fetched.
 
 ### 3.2 Sofascore — the deep per-player stat pack
 
-Via `ScraperFC` 4.5.0. **Verified 537 players × 114 stats, PL 25/26.**
+Via our own client, [`sync/sources/sofascore.py`](../sync/sources/sofascore.py).
+**Verified 537 players × 116 stats, PL 25/26**, and season ids available for both 25/26
+(76986) and 26/27 (96668).
 
-The `curl_cffi` monkey-patch from `Sporting_Director_Game/scripts/fetch-sofascore.py`
-**still works** — the patch point is `ScraperFC.sofascore.botasaurus_browser_get_json`,
-confirmed present in 4.5.0. Sofascore gates on TLS fingerprint: plain `requests` and
-`cloudscraper` get 403, `curl_cffi` with `impersonate="chrome120"` gets 200. This avoids
-the botasaurus/Chrome dependency entirely.
+**Do not use `ScraperFC` here, and don't copy the SDG approach.**
+`Sporting_Director_Game/scripts/fetch-sofascore.py` monkey-patches
+`ScraperFC.sofascore.botasaurus_browser_get_json`, which works locally but **fails on
+GitHub Actions**: `import ScraperFC` pulls in `botasaurus_requests`, which downloads a TLS
+binary from GitHub releases at import time, and that download 403s on runners. The import
+dies before Sofascore is contacted at all, so patching the getter can't help — the patch
+depends on the import that failed. Observed in CI 2026-07-26.
+
+The direct client drops `ScraperFC`, `botasaurus` and `hrequests` entirely. All we needed
+from the library was the endpoint shape and the stat-name list, both reproduced in our
+module. What actually matters is the TLS fingerprint: Sofascore returns 403 to plain
+`requests` and `cloudscraper`, and 200 to `curl_cffi` with `impersonate="chrome120"`.
+
+Endpoint (paginated, 100 per page):
+```
+GET api.sofascore.com/api/v1/unique-tournament/17/season/{season_id}/statistics
+    ?limit=100&offset={n}&accumulation=total&fields={stats}&filters=position.in.G~D~M~F
+```
+`fields` is not cosmetic — Sofascore returns only the fields you ask for, so a name
+missing from `STAT_NAMES` becomes a silently absent column.
+
+**Open question: does Sofascore serve GitHub Actions runners?** Removing the import
+failure was necessary but doesn't answer it — datacenter IP ranges are commonly filtered,
+and the API call from a runner is still untested. The client raises a distinct
+`SofascoreBlocked` on 403/429 and the probe reports it as `BLOCKED` rather than `FAIL`, so
+CI stays meaningful either way. If it turns out to be blocked, the options are a
+self-hosted runner on a home connection, running just this job locally on a schedule, or
+falling back to FPL-Core-Insights for per-match player stats. Everything else in the stack
+runs fine from Actions.
 
 Stats not available anywhere else in our free stack: `rating`, `totwAppearances`,
 `goalsPrevented`, `bigChancesCreated`, `bigChancesMissed`, `possessionWonAttThird`,

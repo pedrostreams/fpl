@@ -14,10 +14,14 @@ from __future__ import annotations
 
 import sys
 import traceback
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 
 failures = 0
+blocked: list[str] = []
 
 
 def hdr(name: str) -> None:
@@ -32,6 +36,17 @@ def bad(msg: str) -> None:
     global failures
     failures += 1
     print(f"FAIL  {msg}", flush=True)
+
+
+def blocked_from_here(source: str, msg: str) -> None:
+    """The source is alive but refuses this network — a hosting problem, not a code one.
+
+    Kept distinct from FAIL so CI stays meaningful: Sofascore 403s GitHub Actions runners
+    (datacenter IPs) while serving a home connection fine. Counting that as a failure
+    would either make the build permanently red or train us to ignore it.
+    """
+    blocked.append(source)
+    print(f"BLOCKED  {msg}", flush=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -127,9 +142,13 @@ def check_understat() -> None:
             bad("team-style columns missing — defensive profiling depends on these")
 
         sched = us.read_schedule().reset_index()
-        if len(teams) < len(sched[sched.get("has_data", True) == True]):  # noqa: E712
-            print(f"      NOTE coverage gap: {len(teams)} team-match rows vs "
-                  f"{len(sched)} scheduled — reconcile against has_data")
+        # A short row count almost always means a stale soccerdata cache, not an
+        # Understat gap: a local cache reported 346/380 team-matches while a fresh CI
+        # cache returned the full 380 on the same day (2026-07-26). Clear
+        # ~/soccerdata/data/Understat before concluding the source is incomplete.
+        if len(teams) < len(sched):
+            print(f"      NOTE {len(teams)} team-match rows vs {len(sched)} scheduled — "
+                  f"likely a stale soccerdata cache; clear it before trusting this")
 
         shots = us.read_shot_events().reset_index()
         ok(f"read_shot_events: {len(shots)} rows x {len(shots.columns)} cols")
@@ -138,32 +157,41 @@ def check_understat() -> None:
 
 
 def check_sofascore() -> None:
-    hdr("Sofascore via ScraperFC + curl_cffi TLS impersonation (Tier 2)")
+    hdr("Sofascore via direct API + curl_cffi TLS impersonation (Tier 2)")
+    # Deliberately NOT via ScraperFC: importing it pulls in botasaurus_requests, which
+    # downloads a TLS binary from GitHub releases at import time. That download 403s on
+    # Actions runners, so the import dies before Sofascore is ever contacted.
+    from sync.sources.sofascore import Sofascore, SofascoreBlocked
+
     try:
-        import ScraperFC as sfc
-        import ScraperFC.sofascore as sofa_mod
-        from curl_cffi import requests as cr
+        sofa = Sofascore()
+        seasons = sofa.seasons()
+        # Don't sort these lexically — Sofascore labels run '26/27'...'99/00', so a
+        # string sort reports 1999 as the newest season. Check for the ones we need.
+        have = {s: seasons.get(s) for s in ("25/26", "26/27")}
+        ok(f"seasons: {len(seasons)} available; "
+           + ", ".join(f"{s}={'id ' + str(i) if i else 'MISSING'}"
+                       for s, i in have.items()))
+        if not have["25/26"]:
+            bad("Sofascore has no 25/26 season — enrichment has no completed season")
 
-        # Sofascore gates on TLS fingerprint: plain requests/cloudscraper get 403,
-        # curl_cffi impersonating chrome120 gets 200. Patching the module-level JSON
-        # getter avoids ScraperFC's botasaurus/Chrome dependency entirely.
-        def _get_json(url: str, *a, **k) -> dict:
-            resp = cr.get(url, impersonate="chrome120", timeout=30)
-            resp.raise_for_status()
-            return resp.json()
-
-        patched = [a for a in ("botasaurus_browser_get_json", "get_json", "_get_json")
-                   if hasattr(sofa_mod, a)]
-        for a in patched:
-            setattr(sofa_mod, a, _get_json)
-        if not patched:
-            bad("no known patch point on ScraperFC.sofascore — API changed")
+        rows = sofa.player_season_stats("25/26")
+        if not rows:
+            bad("player_season_stats returned no rows")
             return
-        print(f"      patched hooks: {patched}")
+        ok(f"player_season_stats: {len(rows)} rows x {len(rows[0])} cols")
 
-        df = sfc.Sofascore().scrape_player_league_stats(
-            year="25/26", league="England Premier League")
-        ok(f"scrape_player_league_stats: {len(df)} rows x {len(df.columns)} cols")
+        # A subset that exists nowhere else in the free stack — if these vanish, the
+        # source is still up but no longer worth the dependency.
+        wanted = ("rating", "goalsPrevented", "bigChancesCreated", "ballRecovery",
+                  "possessionWonAttThird", "expectedGoals", "minutesPlayed")
+        missing = [w for w in wanted if w not in rows[0]]
+        if missing:
+            bad(f"Sofascore no longer returns: {missing}")
+        else:
+            ok(f"all {len(wanted)} signature stats present")
+    except SofascoreBlocked as exc:
+        blocked_from_here("sofascore", f"sofascore: {exc}")
     except Exception:
         bad("sofascore"); traceback.print_exc()
 
@@ -236,15 +264,27 @@ CHECKS = {
 
 
 def main() -> int:
-    which = sys.argv[1] if len(sys.argv) > 1 else "all"
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    strict = "--strict" in sys.argv          # treat blocked sources as failures too
+    which = args[0] if args else "all"
     if which != "all" and which not in CHECKS:
         print(f"unknown check {which!r}; pick from: all, {', '.join(CHECKS)}")
         return 2
+
     for name, fn in CHECKS.items():
         if which in ("all", name):
             fn()
-    print(f"\n{'=' * 72}\n{failures} FAILED check(s)\n{'=' * 72}")
-    return failures
+
+    print(f"\n{'=' * 72}")
+    print(f"{failures} FAILED check(s)")
+    if blocked:
+        print(f"{len(blocked)} BLOCKED from this network: {', '.join(blocked)}")
+        print("  The source is alive but refuses this IP. On GitHub Actions this is")
+        print("  expected for Sofascore (datacenter ranges are filtered) — run that")
+        print("  ingest from a residential connection or a self-hosted runner.")
+        print("  Use --strict to fail the build on blocked sources too.")
+    print("=" * 72)
+    return failures + (len(blocked) if strict else 0)
 
 
 if __name__ == "__main__":

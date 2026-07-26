@@ -3,9 +3,14 @@ psycopg[binary]>=3.2
 requests>=2.32
 
 # Enrichment scrapers (Phase 2) — all verified working 2026-07-26.
-# curl_cffi is not optional for Sofascore: it gates on TLS fingerprint, so plain
-# requests and cloudscraper both get 403 while chrome120 impersonation gets 200.
+#
+# curl_cffi is not optional: Sofascore and ClubElo gate on TLS fingerprint, so plain
+# requests and cloudscraper get 403 while chrome120 impersonation gets 200.
+#
+# ScraperFC is deliberately NOT here. Importing it pulls in botasaurus_requests, which
+# downloads a TLS binary from GitHub releases at import time — that download 403s on
+# Actions runners and killed the probe workflow. sync/sources/sofascore.py talks to the
+# Sofascore API directly instead. See docs/DATA_SOURCES.md §3.2.
 soccerdata>=1.9
-ScraperFC>=4.5
 curl_cffi>=0.15
 pandas>=2.2

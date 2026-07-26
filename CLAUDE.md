@@ -89,10 +89,17 @@ Short version:
   news. 105 fields/player.
 - **Understat** (`soccerdata`) — Tier 2. `read_team_match_stats` gives **PPDA** and
   **deep completions**: the actual answer to "which teams play defensive football".
-  Low PPDA = high press. Also 8 616 shot events/season with x/y and situation.
-- **Sofascore** (`ScraperFC`) — Tier 2. 114 player-season stats. Gates on TLS
-  fingerprint: plain `requests` gets 403, `curl_cffi` with `impersonate="chrome120"` gets
-  200. Patch point is `ScraperFC.sofascore.botasaurus_browser_get_json`.
+  Low PPDA = high press. Also 9 524 shot events/season with x/y and situation.
+  **`soccerdata` caches aggressively** and will serve a partial mid-season snapshot
+  indefinitely — a short row count means a stale cache, not an Understat gap. Clear
+  `~/soccerdata/data/Understat` before concluding otherwise.
+- **Sofascore** — Tier 2. 116 player-season stats via **our own client**,
+  `sync/sources/sofascore.py`. **Never reach for `ScraperFC`** (as
+  `../Sporting_Director_Game` does): importing it downloads a TLS binary from GitHub
+  releases at import time, which 403s on Actions runners and kills the job before
+  Sofascore is contacted. Gates on TLS fingerprint — `curl_cffi` with
+  `impersonate="chrome120"`, not plain `requests`. Raises `SofascoreBlocked` on 403/429 so
+  callers can tell "blocked from this IP" from "source changed shape".
 - **ClubElo**, **football-data.co.uk** — Tier 2. Team strength; closing odds → de-vigged
   win/clean-sheet probabilities, a much better fixture difficulty than FPL's integer FDR.
 - **FBref — do not use.** Lost its Opta licence January 2026; advanced data deleted. A
