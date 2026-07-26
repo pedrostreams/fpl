@@ -67,6 +67,11 @@ python -m sync.cli dimensions --dry-run
 python -m sync.cli snapshot
 python -m sync.cli history --limit 20
 python -m sync.cli all
+
+# Did the data land, and does it look right? Row counts, freshness, season attribution,
+# snapshot behaviour, and growth against the 500 MB free tier.
+python -m sync.cli verify
+python -m sync.cli verify --reap-stale     # close out runs stuck on 'running'
 ```
 
 ## Cron
@@ -89,6 +94,15 @@ select * from sync_freshness;
 
 ## Status
 
-Phase 0 (research) and Phase 1 (core FPL sync) are in. All three sync jobs verified
-against the live API on 2026-07-26. Phase 2 (Understat / Sofascore / ClubElo / odds
-enrichment) is next — see [docs/PLAN.md](docs/PLAN.md).
+Phase 0 (research) and Phase 1 (core FPL sync) are in and **running against Supabase**.
+First real sync 2026-07-26: 558 players, 380 fixtures, 2 568 season-total rows across 21
+seasons, 558 snapshots. `verify` reports all checks passing at 1.7 MB of 500 MB.
+
+Three data constraints found in that first sync — read
+[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) §2.1 before building on the aggregates:
+`history_past` is authoritative for completed seasons (bootstrap disagrees for loan and
+transfer cases), expected stats only exist from 2022/23 onward, and 19% of the player pool
+has no 2025/26 record.
+
+Phase 2 (Understat / Sofascore / ClubElo / odds enrichment) is next — see
+[docs/PLAN.md](docs/PLAN.md).

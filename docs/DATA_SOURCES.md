@@ -130,6 +130,51 @@ first-party — `premierinjuries.com` scraping is **not** required.
 
 ## 3. Tier 2 — Enrichment
 
+### 2.1 Findings from the first real sync (2026-07-26)
+
+Three constraints that only became visible once the data was actually in Postgres. All
+three shape what the product can and cannot claim.
+
+**`history_past` is authoritative for completed seasons; `bootstrap` is not.** For
+2025/26 the two sources disagree for exactly 5 of 454 players, and `history_past` is
+higher every time:
+
+| Player | bootstrap minutes | history_past minutes | bootstrap xG | history_past xG |
+|---|---|---|---|---|
+| Anthony | 0 | 2717 | 0.00 | 5.11 |
+| Tchaouna | 0 | 1259 | 0.00 | 1.27 |
+| Disasi | 0 | 1254 | 0.00 | 1.10 |
+| Wilson | 0 | 1234 | 0.00 | 7.60 |
+| Gomes | 2207 | 2829 | 1.15 | 1.29 |
+
+These are loan and transfer cases: the `elements` payload reflects the player's record at
+their *current* club, while `history_past` holds the full season. **Read completed seasons
+from `source = 'history_past'` and reserve `source = 'bootstrap'` for the live season.**
+Keeping `source` in the primary key of `player_season_totals` is what makes the
+disagreement visible instead of one silently overwriting the other.
+
+**Expected stats begin in 2022/23.** `history_past` reaches back to 2006/07 (21 seasons,
+2 568 rows), but xG/xA/xGI/xGC are zero for every season through 2021/22 and only appear
+from 2022/23 onward:
+
+| Season | players with xG | players total |
+|---|---|---|
+| ≤ 2021/22 | **0** | 4–168 |
+| 2022/23 | 178 | 233 |
+| 2023/24 | 206 | 277 |
+| 2024/25 | 274 | 347 |
+| 2025/26 | 342 | 454 |
+
+So any xG-based backtest has **four completed seasons**, not twenty. Pre-2022/23 history
+is usable for points, minutes and price trajectories only. Worth knowing before designing
+a price model that wants expected-stat features.
+
+**104 of 558 players (19%) have no 2025/26 record at all**, all with zero minutes — new
+signings, promoted-club players, and academy prospects. A scouting tool that ranks on
+last-season xGI per 90 is blind to a fifth of the pool, which is exactly where hidden gems
+hide. The scout screen needs an explicit cold-start path (minutes trend once the season
+starts, plus Understat/Sofascore history from the player's previous league).
+
 ### 3.1 Understat — the team-style and shot-location engine
 
 Via `soccerdata` 1.9.0. Methods verified present: `read_leagues`, `read_seasons`,

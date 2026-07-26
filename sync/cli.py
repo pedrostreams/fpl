@@ -18,12 +18,13 @@ from typing import Any
 
 from . import config
 from .fpl import FplClient
-from .jobs import dimensions, history, snapshot
+from .jobs import dimensions, history, snapshot, verify
 
 JOBS = {
     "dimensions": dimensions.run,
     "snapshot": snapshot.run,
     "history": history.run,
+    "verify": verify.run,
 }
 
 
@@ -40,6 +41,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="history only: cap the number of players fetched")
     parser.add_argument("--no-cache", action="store_true",
                         help="skip writing raw payloads to tmp/raw")
+    parser.add_argument("--reap-stale", action="store_true",
+                        help="verify only: mark sync_runs rows stuck on 'running' as errors")
     args = parser.parse_args(argv)
 
     config.load_dotenv()
@@ -54,8 +57,16 @@ def main(argv: list[str] | None = None) -> int:
         kwargs: dict[str, Any] = {"dry_run": args.dry_run}
         if name == "history":
             kwargs["limit"] = args.limit
+        if name == "verify":
+            kwargs["reap_stale"] = args.reap_stale
         try:
-            _print(name, JOBS[name](client, **kwargs))
+            result = JOBS[name](client, **kwargs)
+            # verify is read-only and formats its own tables; a JSON dump would just
+            # repeat what it already printed.
+            if name == "verify":
+                failed += len(result.get("problems", []))
+            else:
+                _print(name, result)
         except Exception as exc:
             failed += 1
             print(f"\n[{name}] FAILED: {exc!r}", file=sys.stderr, flush=True)

@@ -38,3 +38,13 @@ jobs:
         run: |
           python -m sync.cli all --no-cache \
             ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      # A green sync only proves the process exited 0. This checks the things that can be
+      # silently wrong: season attribution, unresolved references, snapshot
+      # insert-on-change behaviour, stale runs, and growth against the 500 MB free tier.
+      # Exits non-zero on any problem, so the workflow goes red.
+      - name: Verify
+        if: ${{ !inputs.dry_run }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m sync.cli verify

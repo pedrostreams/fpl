@@ -160,13 +160,27 @@ def sync_run(conn: psycopg.Connection, job: str) -> Iterator[dict]:
     try:
         yield state
     except Exception as exc:
-        with conn.cursor() as cur:
-            cur.execute(
-                "update sync_runs set finished_at = now(), status = 'error', "
-                "rows_touched = %s, detail = %s, error = %s where id = %s",
-                (state["rows"], Jsonb(state["detail"]), repr(exc)[:4000], run_id),
-            )
-        conn.commit()
+        # rollback() first, always. A failed write leaves the connection in an aborted
+        # transaction, where every subsequent statement — including this very error
+        # record — fails too. Without the rollback the row stays 'running' forever and
+        # the error is lost, which is the observability layer breaking at the one moment
+        # it matters. (Observed 2026-07-26: sync_runs rows 1-2 stuck this way.)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "update sync_runs set finished_at = now(), status = 'error', "
+                    "rows_touched = %s, detail = %s, error = %s where id = %s",
+                    (state["rows"], Jsonb(state["detail"]), repr(exc)[:4000], run_id),
+                )
+            conn.commit()
+        except Exception:
+            # A dead connection can't record anything; let the original error surface
+            # rather than masking it with a bookkeeping failure.
+            pass
         raise
     else:
         with conn.cursor() as cur:

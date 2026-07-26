@@ -20,6 +20,7 @@ python scripts/probe/probe_sources.py          # health-check every source; exit
 python -m sync.cli all --dry-run               # parse live payloads, write nothing
 python -m sync.cli snapshot                    # the hourly job
 python -m sync.cli history --limit 20          # element-summary, capped
+python -m sync.cli verify                      # post-sync sanity + storage growth
 
 psql "$DATABASE_URL" -f supabase/migrations/0001_fpl_core.sql   # idempotent
 ```
@@ -39,7 +40,13 @@ There is no test runner. `--dry-run` plus the probe script are the verification 
    `player_seasons.fpl_id` / `team_seasons.fpl_id` because payloads reference them
    (fixtures use `team_h`/`team_a`, element-summary takes an element id).
 
-3. **`player_snapshots` cannot be backfilled.** The FPL API has no history endpoint. It's
+3. **Read completed seasons from `player_season_totals` where `source = 'history_past'`,
+   never `'bootstrap'`.** They disagree for loan and transfer cases — verified 2026-07-26,
+   5 players in 2025/26, e.g. Anthony at 0 bootstrap minutes vs 2717 in history_past.
+   Related: expected stats (xG/xA/xGI/xGC) are **zero before 2022/23**, so xG backtests
+   have four seasons, not twenty. Details in `docs/DATA_SOURCES.md` §2.1.
+
+4. **`player_snapshots` cannot be backfilled.** The FPL API has no history endpoint. It's
    written **insert-on-change** against `snapshot.WATCHED` because a naive hourly insert
    of 558 players is ~4M rows/season (~600 MB), over Supabase's 500 MB free tier. If you
    add a field to `WATCHED`, row volume goes up — check the growth query in
@@ -54,6 +61,11 @@ There is no test runner. `--dry-run` plus the probe script are the verification 
   *and* no `finished` event) so one flag quirk can't mislabel an ingest.
 - `sync/db.py` — `upsert` (chunked at 500, stamps `updated_at`), `insert_ignore`
   (append-only tables), `sync_run` context manager (records every attempt, re-raises).
+  **`sync_run`'s error path must `rollback()` before recording the failure**: a failed
+  write leaves the connection in an aborted transaction where the error-recording `UPDATE`
+  fails too, stranding the row on `'running'` and losing the error. That bug produced the
+  two orphaned rows visible in `sync_runs` ids 1-2. `verify` now flags stale `'running'`
+  rows because `sync_freshness` reads only `'ok'` and `'error'` and can't see them.
 - `sync/fpl.py` — API client + coercion. **The API returns numbers as strings**
   (`selected_by_percent: "74.6"`, `expected_goals: "25.50"`) and mixes `""` with `null`.
   Always go through `as_int` / `as_num` / `as_text`. `as_num` returns `Decimal`, not
