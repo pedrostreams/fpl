@@ -33,6 +33,13 @@ Five things drive every decision in this document:
    Snapshotting must start before the season does. This is the single most
    time-critical item in the whole project.
 
+   Capturing started 2026-07-26 17:53 UTC, hourly, and `sync-snapshot` was confirmed firing
+   from `schedule` the same evening. `player_movement` and `snapshot_coverage` (migration 0009)
+   are the read side. Two traps that insert-on-change sets for anything reading it are
+   documented in `CLAUDE.md`: a missing row means *unchanged*, not *missing*, and an empty
+   capture leaves no trace at all — so freshness must come from `sync_runs`, never from
+   `max(captured_at)`.
+
 4. **FPL now ships an official price predictor** (`price_change_percent`, new for
    2026/27). It is currently `0` for all 558 players because the season hasn't started.
    Treat it as a free *input signal* to our own model, not as a competitor — we will

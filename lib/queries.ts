@@ -429,6 +429,111 @@ export async function getFixtureTicker(): Promise<Ticker> {
   return { gameweeks, teams: [...byTeam.values()] }
 }
 
+export type SnapshotCoverage = {
+  rows: number
+  players: number
+  /** Distinct capture instants that wrote at least one row. */
+  instants: number
+  firstChange: string | null
+  lastChange: string | null
+  changeSpanHours: number | null
+  minutesSinceLastChange: number | null
+  /** When the job last RAN, which is the health signal — see the note in migration 0009. */
+  lastRun: string | null
+  minutesSinceLastRun: number | null
+  covers24h: boolean
+  covers7d: boolean
+}
+
+export async function getSnapshotCoverage(): Promise<SnapshotCoverage> {
+  const rows = await query<Record<string, unknown>>('select * from snapshot_coverage')
+  const r = rows[0] ?? {}
+  const iso = (v: unknown) => (v ? new Date(v as string).toISOString() : null)
+  return {
+    rows: Number(r.rows ?? 0),
+    players: Number(r.players ?? 0),
+    instants: Number(r.instants ?? 0),
+    firstChange: iso(r.first_change),
+    lastChange: iso(r.last_change),
+    changeSpanHours: num(r.change_span_hours),
+    minutesSinceLastChange: num(r.minutes_since_last_change),
+    lastRun: iso(r.last_run),
+    minutesSinceLastRun: num(r.minutes_since_last_run),
+    covers24h: Boolean(r.covers_24h),
+    covers7d: Boolean(r.covers_7d),
+  }
+}
+
+export type MovementRow = {
+  playerCode: number
+  webName: string
+  position: string | null
+  teamShort: string | null
+  price: number | null
+  selectedByPercent: number | null
+  status: string | null
+  news: string | null
+  chanceOfPlaying: number | null
+  totalPoints: number | null
+  form: number | null
+  /** FPL's own price predictor, new for 2026/27. An input signal, not a rival. */
+  priceChangePercent: number | null
+  costChangeEvent: number | null
+  costChangeStart: number | null
+  transfersInEvent: number | null
+  transfersOutEvent: number | null
+  netTransfersEvent: number | null
+  /** False until the series reaches back 24h. Deltas are then null, never 0. */
+  has24hHistory: boolean
+  priceDelta24h: number | null
+  ownershipDelta24h: number | null
+  netTransfers24h: number | null
+  has7dHistory: boolean
+  priceDelta7d: number | null
+  ownershipDelta7d: number | null
+  netTransfers7d: number | null
+}
+
+export async function getMovement(): Promise<MovementRow[]> {
+  const rows = await query<Record<string, unknown>>(`
+    select player_code, web_name, position, team_short, price, selected_by_percent,
+           status, news, chance_of_playing_next_round, total_points, form,
+           price_change_percent, cost_change_event, cost_change_start,
+           transfers_in_event, transfers_out_event, net_transfers_event,
+           has_24h_history, price_delta_24h, ownership_delta_24h, net_transfers_24h,
+           has_7d_history, price_delta_7d, ownership_delta_7d, net_transfers_7d
+    from player_movement
+    order by selected_by_percent desc nulls last
+  `)
+  return rows.map((r) => ({
+    playerCode: Number(r.player_code),
+    webName: String(r.web_name ?? ''),
+    position: (r.position as string) ?? null,
+    teamShort: (r.team_short as string) ?? null,
+    price: num(r.price),
+    selectedByPercent: num(r.selected_by_percent),
+    status: (r.status as string) ?? null,
+    news: (r.news as string) ?? null,
+    chanceOfPlaying: num(r.chance_of_playing_next_round),
+    totalPoints: num(r.total_points),
+    form: num(r.form),
+    priceChangePercent: num(r.price_change_percent),
+    costChangeEvent: num(r.cost_change_event),
+    costChangeStart: num(r.cost_change_start),
+    transfersInEvent: num(r.transfers_in_event),
+    transfersOutEvent: num(r.transfers_out_event),
+    netTransfersEvent: num(r.net_transfers_event),
+    has24hHistory: Boolean(r.has_24h_history),
+    priceDelta24h: num(r.price_delta_24h),
+    ownershipDelta24h: num(r.ownership_delta_24h),
+    netTransfers24h: num(r.net_transfers_24h),
+    has7dHistory: Boolean(r.has_7d_history),
+    priceDelta7d: num(r.price_delta_7d),
+    ownershipDelta7d: num(r.ownership_delta_7d),
+    netTransfers7d: num(r.net_transfers_7d),
+  }))
+}
+
 export type SyncHealth = {
   job: string
   lastOk: string | null

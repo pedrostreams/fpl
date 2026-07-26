@@ -423,6 +423,30 @@ def run(
                                 f"{f['avg_expected_goals']} expected goals per side, "
                                 f"outside the plausible 1.1-1.7")
 
+        mv = db.fetch(conn, "select * from movement_check")
+        if mv:
+            print("\n=== player_movement (our own snapshot series) ===")
+            print(_fmt(mv))
+            m = mv[0]
+            # The invariant that matters: a window we have no history for must read null, not
+            # zero. Zero would tell the user "this player is stable" when the truth is "we have
+            # not been watching long enough to know".
+            if m["no_history_means_null"] is False:
+                problems.append("player_movement reports a delta for players with no history "
+                                "for that window — a missing window must be null, not 0")
+            if m["one_row_per_player"] is False:
+                problems.append("player_movement has more than one row for some player")
+            # Snapshot liveness reads from sync_runs, not from the last row written: the table
+            # is insert-on-change, so a healthy hourly job writes nothing while prices are
+            # frozen. 150 minutes allows for GitHub's routinely-late cron.
+            since = m["minutes_since_last_run"]
+            if since is None:
+                problems.append("no successful snapshot run recorded — the one series that "
+                                "cannot be backfilled is not being captured")
+            elif since > 150:
+                problems.append(f"last successful snapshot run was {int(since)} minutes ago, "
+                                f"expected hourly — lost time series cannot be recovered")
+
         gems = db.fetch(conn, """
             select position, count(*) as n, round(avg(gem_score), 3) as avg_score,
                    round(max(gem_score), 3) as best

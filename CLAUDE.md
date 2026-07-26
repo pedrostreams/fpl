@@ -34,7 +34,10 @@ There is no test runner. `--dry-run`, the probe scripts, and `verify` are the ve
 path. The two `prove_*` scripts run without a database or network, so they gate CI.
 
 **Nothing is `finished` until 2026-08-21**, so every code path keyed on an in-progress season
-is unexercised by the data. That is how the fixture ticker shipped with incomparable totals:
+is unexercised by the data. `.claude/context/FIX_WHEN_LIVE.md` is the go-live checklist — 74
+items, ordered by when each becomes checkable, from the deadline hour through the first price
+change to end-of-season refit. **Add to it whenever you write something the frozen data cannot
+reach**, and tick items off there rather than rediscovering them. That is how the fixture ticker shipped with incomparable totals:
 `fixture_run` looked correct and had never run against the state it will spend the whole season
 in. To exercise one, simulate rather than wait — either rewrite `finished` as
 `kickoff_time < <cutoff>` inside a copy of the view's SQL, or briefly `update fixtures set
@@ -67,6 +70,15 @@ finished = true` for a few GW1 rows with the revert in a `finally`. `dimensions`
    `docs/SYNC_PLAN.md` §8 first. Cumulative `transfers_in`/`transfers_out` are
    deliberately *not* watched: within a gameweek they duplicate the `_event` counters and
    would force a row per player per hour.
+
+   Insert-on-change has **two consequences that will produce wrong numbers if you forget them**
+   (both handled in migration 0009, `player_movement`):
+   - "The value 24 hours ago" is the most recent row **at or before** that instant, not the row
+     nearest to it. No row means nothing changed, not that data is missing.
+   - A capture where nothing moved writes **no rows at all**, so `max(captured_at)` is the last
+     time something *changed*. Using it as a freshness signal reports a perfectly healthy hourly
+     job as dead whenever the market is frozen — which is the entire preseason. Liveness comes
+     from `sync_runs`, which records every attempt including the empty ones.
 
 ## Cross-source name matching — where a bug is invisible
 

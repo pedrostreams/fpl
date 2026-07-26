@@ -23,9 +23,9 @@ jobs:
     # history makes ~558 requests at 0.25s spacing (~140s) plus upserts.
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip

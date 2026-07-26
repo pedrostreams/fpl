@@ -124,6 +124,7 @@ ten false positives.
 | `/scout` | All 558 players, per-90 rates with percentile heatmaps, sortable and filterable client-side |
 | `/gems` | Hidden gems ranked on output × ownership scarcity × value, each score showing its components |
 | `/teams` | Fixture difficulty for the next six gameweeks, plus style and performance per team — PPDA press axis, xG/xGA, clean sheets, Elo |
+| `/prices` | Price and ownership movement from our own hourly snapshots — the only screen whose data exists nowhere else |
 
 Design language: [.claude/context/DESIGN.md](.claude/context/DESIGN.md).
 
@@ -146,5 +147,15 @@ predicted/observed). The constants live in
 [`supabase/migrations/0007_fixture_difficulty.sql`](supabase/migrations/0007_fixture_difficulty.sql);
 `python -m sync.cli verify` guards the invariants.
 
-Remaining before GW1: price watch (blocked on data until the GW1 deadline) and deploy. See
-[docs/PLAN.md](docs/PLAN.md).
+### Price watch
+
+Built, and deliberately near-empty until 2026-08-21. FPL moves no price and counts no gameweek
+transfer before the GW1 deadline — verified: all 558 players read 0 net transfers and 0 price
+change since the season start. Ownership *does* drift as the crowd builds squads, and that is
+the one live signal in preseason.
+
+The columns that need history show `·`, not `0`, until the series reaches back far enough.
+`0` would claim a player is stable when the truth is we have not been watching long enough;
+`verify` fails if a delta ever appears without the history behind it.
+
+Remaining before GW1: deploy. See [docs/PLAN.md](docs/PLAN.md).

@@ -128,9 +128,14 @@ warns the version has breaking changes.
 
 ### Week 4 — 2026-08-17 → 08-21: price watch, deploy, buffer
 
-- **Price watch** screen. Net-transfer velocity plus FPL's own `price_change_percent` as an
+- ~~**Price watch** screen. Net-transfer velocity plus FPL's own `price_change_percent` as an
   input signal. Shows nothing until the GW1 deadline unfreezes prices — that's expected,
-  and the snapshot pipeline is already warm so it fills in by itself.
+  and the snapshot pipeline is already warm so it fills in by itself.~~ **Done**, and it does
+  indeed show nothing on the transfer columns: verified all 558 players at 0 net transfers and
+  0 price change since season start. What it *does* show now is ownership drift, the coverage
+  state of the series, and whether the hourly job is actually running. The columns needing
+  history render `·` rather than `0` — see `.claude/context/DESIGN.md` §1.2 on the three kinds
+  of absent.
 - Deploy to Vercel, wire `sync_freshness` into a visible staleness indicator.
 - Buffer. Four weeks with no slack is not a plan.
 

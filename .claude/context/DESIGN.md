@@ -15,10 +15,21 @@ its trustworthiness readable at a glance*. Anything that competes with that lose
    The same number with a percentile behind it says "top 8% of midfielders". Every metric
    that can be ranked *is* ranked, and the rank is what carries the colour.
 
-2. **Absent must never look like low.** A player with no data has not scored zero. Null
-   renders as an em dash (`fmt()` in [lib/format.ts](../../lib/format.ts)) and an unranked
-   cell gets `.heat-null` hatching, never a pale shade of the ramp. 19% of the player pool
-   is cold-start; if they read as "bad" the hidden-gems screen defeats itself.
+2. **Absent must never look like low.** A player with no data has not scored zero. 19% of the
+   player pool is cold-start; if they read as "bad" the hidden-gems screen defeats itself.
+   There are **three distinct kinds of absent** and each has its own glyph, because collapsing
+   them loses the reason:
+
+   | Glyph | Means | Where |
+   |---|---|---|
+   | `—` | No value exists | `fmt()` in [lib/format.ts](../../lib/format.ts) |
+   | hatching | A value exists but is not ranked — sample too small | `.heat-null` |
+   | `·` | Not observed for long enough yet | `/prices` 24h and 7d deltas |
+
+   The third is the subtlest and the most dangerous to get wrong. A `0` in a 24-hour delta
+   column says "this player is stable"; the truth may be "we have only been watching for an
+   hour". The SQL enforces it — `has_24h_history` in `player_movement` — and `verify` fails the
+   build if a delta ever appears without the history to support it.
 
 3. **The screen states its own provenance.** Which season the numbers describe, whether
    the season has started, whether a sync job is stale, whether a club was promoted — all

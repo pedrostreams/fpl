@@ -11,6 +11,7 @@ const NAV = [
   { href: '/scout', label: 'Scout' },
   { href: '/gems', label: 'Hidden gems' },
   { href: '/teams', label: 'Teams' },
+  { href: '/prices', label: 'Prices' },
 ] as const
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
