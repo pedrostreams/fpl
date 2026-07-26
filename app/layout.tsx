@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { Logo } from '@/components/logo'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -23,7 +24,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           style={{ background: 'color-mix(in oklab, var(--bg) 88%, transparent)' }}
         >
           <div className="mx-auto flex h-14 max-w-[1800px] items-center gap-6 px-4">
-            <Link href="/scout" className="flex items-baseline gap-2">
+            <Link href="/scout" className="flex items-center gap-2">
+              <Logo />
               <span className="text-[15px] font-semibold tracking-tight">FPL Scout</span>
               <span
                 className="hidden text-[11px] font-medium uppercase tracking-widest sm:inline"

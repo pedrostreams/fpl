@@ -106,11 +106,26 @@ export function ScoutTable({
   statsSeason: string | null
   seasonStarted: boolean
 }) {
+  // Price bounds come from the data, never a literal. A hardcoded 15.0 default silently
+  // excluded Haaland at £15.5 — the single most-owned player in the game missing from a scout
+  // screen that reported "557 of 558 players" and looked entirely healthy. FPL's ceiling moves
+  // between seasons, so any constant here is a future version of the same bug.
+  const priceCeiling = useMemo(() => {
+    const prices = rows.map((r) => r.price ?? 0).filter((p) => p > 0)
+    if (!prices.length) return 15.5
+    return Math.ceil(Math.max(...prices) * 2) / 2 // up to the nearest 0.5, as FPL prices are
+  }, [rows])
+  const priceFloor = useMemo(() => {
+    const prices = rows.map((r) => r.price ?? 0).filter((p) => p > 0)
+    if (!prices.length) return 3.5
+    return Math.floor(Math.min(...prices) * 2) / 2
+  }, [rows])
+
   const [sorting, setSorting] = useState<SortingState>([{ id: 'xgi', desc: true }])
   const [search, setSearch] = useState('')
   const [positions, setPositions] = useState<Set<string>>(new Set())
   const [team, setTeam] = useState('')
-  const [maxPrice, setMaxPrice] = useState(15)
+  const [maxPrice, setMaxPrice] = useState(priceCeiling)
   const [minMinutes, setMinMinutes] = useState(0)
   const [maxOwnership, setMaxOwnership] = useState(100)
   const [availableOnly, setAvailableOnly] = useState(false)
@@ -338,7 +353,7 @@ export function ScoutTable({
           </select>
         </Field>
 
-        <Slider label="Max price" value={maxPrice} min={3.5} max={15.5} step={0.5}
+        <Slider label="Max price" value={maxPrice} min={priceFloor} max={priceCeiling} step={0.5}
           onChange={setMaxPrice} display={fmtPrice(maxPrice)} />
         <Slider label="Min mins" value={minMinutes} min={0} max={3000} step={100}
           onChange={setMinMinutes} display={fmtInt(minMinutes)} />

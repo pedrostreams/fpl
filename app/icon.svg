@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="FPL Scout">
+  <!--
+    Sport plus data, in one filled shape.
+
+    The pentagon is the black panel of a classic football — the most compressible symbol the
+    sport has, still readable at a size where a whole ball collapses into a grey circle. Three
+    ascending bars are knocked out of it, and the tallest is deliberately WIDER than the other
+    two: the crowd sees three players, the model sees the one worth having. That asymmetry is
+    the entire premise of the app, and it survives at 16px where a second colour would not.
+
+    Why filled and not outlined, and why loud: this was picked by rendering five candidates at
+    16, 20, 32 and 56 px against both a light and a dark tab strip, plus a mock crowded tab bar.
+    An outlined pentagon reads as a house at favicon size, and any dark-filled version simply
+    vanishes beside the coloured icons next to it. A favicon's first job is to be findable.
+
+    Colours are literal hex, not currentColor or a CSS variable, because a favicon renders with
+    no page context — nothing would resolve. The one thing it can do is prefers-color-scheme,
+    used here because the dark-theme accent has too little contrast against a white tab strip.
+    Both values are the accent from globals.css: oklch(0.74 0.15 165) and oklch(0.55 0.14 165).
+  -->
+  <style>
+    .mark { fill: #0f9e77; }
+    @media (prefers-color-scheme: dark) {
+      .mark { fill: #22d3a5; }
+    }
+  </style>
+  <path
+    class="mark"
+    fill-rule="evenodd"
+    d="M16 2.6 28.8 11.9 23.9 27 8.1 27 3.2 11.9Z
+       M8.9 18.7h3.1v4.7H8.9z
+       M13.5 15h3.1v8.4h-3.1z
+       M18.1 10.6h5v12.8h-5z"
+  />
+</svg>
