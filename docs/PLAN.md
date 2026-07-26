@@ -3,177 +3,189 @@
 **Goal:** a data-driven FPL web app good enough to replace a Fantasy Football Fix Premium
 subscription, built on free sources that refresh at least daily.
 
-**Hard deadline:** GW1 kicks off with a deadline of **2026-08-21 17:30 UTC**. The premium
-subscription lapses **2026-08-14**, one week earlier.
+**Two dates that drive everything:**
+- **2026-08-14** — the premium subscription lapses. The tool should be *useful* by then.
+- **2026-08-21 17:30 UTC** — GW1 deadline. The tool should be *complete* by then.
 
-**Decided stack** (matches the two reference projects where it makes sense, diverges
-where they hurt):
+Written 2026-07-26, revised the same day after the first real sync surfaced four
+constraints that changed the sequencing. Those are in §2 — read them before planning work.
+
+---
+
+## 1. Decided stack
 
 | Layer | Choice | Why |
 |---|---|---|
-| Store | Supabase Postgres | Same as `vm26` and `Sporting_Director_Game`. Region `eu-central-1`. |
-| Sync runtime | **GitHub Actions** | Only free host that does sub-daily cron *and* runs Python. Vercel Hobby cron is 1×/day and can't run `soccerdata`/`ScraperFC` at all. |
-| Ingest language | **Python, writing straight to Postgres** | `soccerdata` and `ScraperFC` are Python-only. Drops the `Python → JSON → TS` hop that left `Sporting_Director_Game`'s enrichment "currently manual". |
-| Web app | Next.js + TS, read-only against Postgres | Later phase. Reads views, never scrapes. |
+| Store | Supabase Postgres (`eu-central-1`) | Same as `vm26` and `Sporting_Director_Game`. |
+| Sync runtime | **GitHub Actions** | Only free host doing sub-daily cron *and* Python. Vercel Hobby cron is 1×/day and can't run `soccerdata` at all. |
+| Ingest language | **Python → Postgres directly** | `soccerdata` is Python-only. Drops the `Python → JSON → TS` hop that left SDG's enrichment "currently manual". |
+| Web app | Next.js + TS on Vercel, read-only over SQL views | Phase 4. |
+| Auth | **None for v1** | Every figure we display is public data. Adding Supabase auth + RLS costs days and protects nothing. Revisit only if mini-league picks get stored. |
+
+Status: sync is live and verified against Supabase. `verify` green at 1.7 MB of 500 MB.
 
 ---
 
-## The one time-critical fact
+## 2. The four constraints that reshaped this plan
 
-The FPL API exposes **only current state**. There is no historical endpoint. Every
-time-series feature — price prediction, ownership momentum, form trends — depends on
-snapshots *we* capture. Nothing can be backfilled.
+All four were discovered by probing live sources and inspecting real synced data, not from
+documentation. Each one invalidated an assumption in the first draft of this plan.
 
-**But**, verified empirically on 2026-07-26, preseason has no transfer or price activity
-whatsoever:
+**1. Prices are frozen until GW1, so the price model cannot start early.** Verified:
+`max(transfers_in) = 0` and `cost_change_start = 0` for all 558 players. Squad selection
+does not register as transfers. The price screen is blocked by *data*, not by code.
 
-| Preseason probe | Value |
-|---|---|
-| `max(transfers_in_event)` | 0 |
-| `max(transfers_in)` (season total) | 0 |
-| Players with `cost_change_start ≠ 0` | 0 of 558 |
-| Players with `price_change_percent ≠ 0` | 0 of 558 |
-| Players with `selected_by_percent > 0` | **505 of 558** |
-| Registered entries (`total_players`) | **1 573 812** |
+*But* `selected_by_percent` is live — 1.57M squads are being built and ownership drifts
+daily. That can never be backfilled, so the hourly snapshot job runs from now regardless.
+It costs one cron and banks the only thing that's currently accruing.
 
-So squad selection does **not** register as transfers, and prices are frozen until the
-GW1 deadline. **The price model genuinely cannot start before 2026-08-21** — a correct
-instinct, and it reorders the roadmap.
+**2. Expected stats only exist from 2022/23.** `history_past` reaches back to 2006/07 (21
+seasons), but xG/xA/xGI/xGC are zero through 2021/22. Any xG-based backtest has **four**
+completed seasons. Pre-2022/23 history is usable for points, minutes and price trajectories
+only.
 
-What *is* live and unrecoverable right now is **ownership drift**: 1.57M squads are
-already built and `selected_by_percent` moves daily as the template forms. That is worth
-capturing from today, cheaply, even though the price model can't use it yet.
+**3. 19% of the player pool has no prior-season record.** 104 of 558 players, all with zero
+minutes — new signings, promoted clubs, academy. **A scout that ranks on last-season xGI/90
+is blind to exactly where hidden gems live.** The scout and hidden-gems screens need an
+explicit cold-start path, not a silent omission.
 
-**Conclusion:** build **player scouting first**. Run the snapshot job from day one anyway
-— it is one hourly cron, it costs nothing, and it means the price model has a warm
-pipeline the moment prices unfreeze.
+**4. Sofascore is blocked from GitHub Actions.** Confirmed in CI: 403 to runner IPs,
+fine from a home connection. Datacenter ranges are filtered. **Decision: drop Sofascore from
+the hosted sync and use FPL-Core-Insights instead** — it carries per-match player stats
+(tackles, interceptions, clearances, blocks, dribbles, keeper stats) keyed on FPL ids, at
+better granularity than Sofascore's season aggregates, and is reachable from Actions.
+`sync/sources/sofascore.py` stays in the repo for optional local use if a specific metric
+proves necessary.
+
+Also worth remembering: **`history_past` is authoritative for completed seasons, not
+`bootstrap`** (they disagree for loan and transfer cases), and **`soccerdata` caches
+aggressively** — a short row count means a stale cache, not a source gap. Both cost real
+time already. Details in [DATA_SOURCES.md](DATA_SOURCES.md) §2.1 and §3.1.
 
 ---
 
-## Phases
+## 3. Week-by-week to GW1
 
-### Phase 0 — Research ✅ done 2026-07-26
+Sequenced so a *usable* tool exists by 2026-08-14 when premium lapses, rather than
+everything landing at once on the 21st.
 
-Findings in [DATA_SOURCES.md](DATA_SOURCES.md); evidence in
-[scripts/probe/](../scripts/probe/). Headlines:
+### Week 1 — 2026-07-27 → 08-02: enrichment sync
 
-- The FPL API now carries **Opta xG/xA/xGC natively** (105 fields/player) → no paid
-  provider needed, and the `Sportmonks` dependency from `Sporting_Director_Game` is
-  dropped.
-- **FBref is dead for advanced stats** — lost its Opta licence January 2026, data
-  deleted. A second loss after the StatsBomb termination. Do not build on it.
-- **Understat, Sofascore, ClubElo, football-data.co.uk all verified alive** today.
-- FPL ships its own `price_change_percent` predictor for 2026/27 — treat as a free input
-  signal, not a competitor; we'll hold the raw net-transfer curve it hides.
+Migration `0002` plus one Python job per source, each `run(client, *, dry_run=False)`.
 
-### Phase 1 — Core sync (now → ~2026-08-02)
-
-Design in [SYNC_PLAN.md](SYNC_PLAN.md).
-
-1. Supabase project + migration `0001` (FPL core + `player_snapshots` + `sync_runs`).
-2. Python sync for `bootstrap-static`, `fixtures`, `element-summary`.
-3. GitHub Actions: hourly snapshot, daily full sync.
-4. **Start snapshotting immediately** to bank ownership drift before GW1.
-
-Success test: `player_snapshots` gains 558 rows per hour without duplicates, and
-`sync_runs` shows green.
-
-### Phase 2 — Enrichment sync (~2026-08-02 → 08-09)
-
-Migration `0002` plus one Python module per source:
-
-- **Understat** — `read_team_match_stats` (PPDA, deep completions, per-match xG/npxG),
-  `read_shot_events` (8 616 shots/season with x/y, body part, situation),
-  `read_player_season_stats` (xA, xGChain, xGBuildup).
-- **Sofascore** — 114 player-season stats via the verified `curl_cffi`
-  `chrome120` TLS-impersonation patch.
+- **Understat** — `understat_team_match` (normalised to one row per team per match, so
+  PPDA and deep completions aggregate cleanly), `understat_shots` (9 524/season with x/y,
+  body part, situation), `understat_player_season` (xA, xGChain, xGBuildup).
+- **FPL-Core-Insights** — per-match player stats, keyed on FPL ids. Mirror what we use;
+  it's one volunteer's repo with no stated licence or SLA.
 - **ClubElo** — team Elo time series.
-- **football-data.co.uk** — closing odds → de-vigged win / clean-sheet probabilities.
-  (`2627/E0.csv` 404s until matches are played; expected.)
+- **football-data.co.uk** — closing odds. `2627/E0.csv` 404s until matches are played, so
+  ingest 25/26 now and let the current season appear on its own.
+- **Identity** — resolve FPL ↔ Understat once into `player_external_ids`. Cascade on
+  normalised name + team, then surname + team + position. Log unmatched to
+  `tmp/<source>-unmatched.json`. Sticky: later runs reuse the mapping so a manual
+  correction survives.
 
-Also here: the FPL ↔ Understat ↔ Sofascore identity problem. Resolve once into
-`player_external_ids` rather than name-matching at query time — reuse the cascade idea
-from `Sporting_Director_Game/lib/matching/players.ts`, but persist the result.
+Done when: `verify` covers the new tables and the probe still exits 0.
 
-### Phase 3 — Derived metrics (~2026-08-09 → 08-16)
+### Week 2 — 2026-08-03 → 08-09: derived metrics + scout screen
 
-SQL views and materialised views. `Sporting_Director_Game` proved the matview pattern
-works; reuse it, and reuse its rule that base-stat writes need an explicit refresh.
+Migration `0003`, views and materialised views. SDG proved the matview pattern; reuse it,
+including its rule that base-stat writes need an explicit refresh.
 
 - Rolling per-90s over last N gameweeks, minutes-weighted.
+- Percentile ranks per position — the input to the heatmap.
 - Over/underperformance: `goals − xG`, `assists − xA`.
-- Value: points per £m, and xGI per £m.
-- **Team style:** PPDA and deep-completions percentiles → a defensive/pressing axis.
-- **Fixture difficulty from odds**, not FPL's integer 1–5 FDR.
-- **DEFCON reliability:** rate of clearing the threshold per 90, not just the season total.
-- Set-piece threat, straight from `penalties_order` / `*_freekicks_order` / corners.
+- Value: points per £m, xGI per £m.
+- **DEFCON reliability** — rate of clearing the threshold per 90, not the season total.
+- **Cold-start handling** for the 104 players with no history (constraint 3).
 
-### Phase 4 — Web app (~2026-08-16 → GW1, then iterative)
+Then the Next.js app: scaffold + **player scout** table with percentile heatmaps. Lift the
+TanStack Table approach and `lib/heatmap.ts` from
+`Sporting_Director_Game/components/players-table/` rather than reinventing it.
 
-Next.js + TS, reading views only. First screens, in order:
+Note: `vm26` runs Next 16 with Base UI (not Radix) and composes via the `render` prop, not
+`asChild`. Match that, and read `node_modules/next/dist/docs/` first — its `AGENTS.md`
+warns the version has breaking changes.
 
-1. **Player scout** — filterable, sortable table with percentile heatmaps. This is the
-   Phase-4 entry point because it's what you need to pick a GW1 squad. Lift the
-   TanStack Table + `lib/heatmap.ts` percentile approach from
-   `Sporting_Director_Game/components/players-table/`.
-2. **Hidden gems** — high xGI/90 × low ownership × low price × rising minutes.
-3. **Team profiles** — form, xG/xGA, PPDA, Elo, upcoming fixture ticker.
-4. **Price watch** — goes live at GW1, when the underlying data starts existing.
+### Week 3 — 2026-08-10 → 08-16: the tool becomes useful
 
-### Phase 5 — The differentiator (post-GW1)
+**Target: usable by 2026-08-14.**
 
-**Mini-league effective ownership.** Pull the friend group's actual squads via
-`leagues-classic/{id}/standings/` → `entry/{id}/event/{n}/picks/`, and compute EO against
-*those 10–20 rivals* instead of the global top-10k.
+- **Hidden gems** — high xGI/90 × low ownership × low price × rising minutes, with the
+  reason shown, and honest about cold-start players.
+- **Team profiles** — PPDA and deep completions as a defensive/pressing axis, rolling
+  xG/xGA, Elo.
+- **Fixture ticker on odds-implied difficulty**, not FPL's integer 1–5 FDR. De-vigged 1X2
+  and O/U 2.5 give win and clean-sheet probabilities. Falls back to Elo until `2627/E0.csv`
+  exists.
+- Set-piece and penalty threat, straight from the FPL taker orders — free and first-party.
 
-This is the feature Fantasy Football Fix structurally cannot offer, because it doesn't
-know who you're playing against. It's also the most direct answer to "bruke dette til min
-fordel". Blocked until the season starts (picks are hidden pre-GW1).
+### Week 4 — 2026-08-17 → 08-21: price watch, deploy, buffer
 
-**Needed from you:** the mini-league ID — visible in the URL when you open the league on
-the FPL site (`.../leagues/XXXXXX/standings/c`).
+- **Price watch** screen. Net-transfer velocity plus FPL's own `price_change_percent` as an
+  input signal. Shows nothing until the GW1 deadline unfreezes prices — that's expected,
+  and the snapshot pipeline is already warm so it fills in by itself.
+- Deploy to Vercel, wire `sync_freshness` into a visible staleness indicator.
+- Buffer. Four weeks with no slack is not a plan.
 
 ---
 
-## Feature → source map
+## 4. After GW1
 
-Condensed from [DATA_SOURCES.md](DATA_SOURCES.md) §6:
+**Mini-league effective ownership** — the differentiator. Pull the friend group's actual
+squads via `leagues-classic/{id}/standings/` → `entry/{id}/event/{n}/picks/` and compute EO
+against *those 10–20 rivals* instead of the global top-10k.
 
-| What you asked for | Source | Phase |
+Fantasy Football Fix structurally cannot offer this: it doesn't know who you're playing
+against. It is the most direct answer to using this to your advantage. Blocked until the
+season starts, because picks are hidden pre-GW1.
+
+**Still needed from you:** the mini-league id, from the FPL URL
+(`.../leagues/XXXXXX/standings/c`).
+
+**Price model training** — once `player_price_events` has a few weeks of labelled moves,
+fit the rise/fall model properly instead of a threshold heuristic.
+
+---
+
+## 5. Feature → source map
+
+| What you asked for | Source | Lands |
 |---|---|---|
-| Who's performing right now | FPL `form`, xGI/90, DEFCON/90 | 3 |
-| Hidden gems | FPL ownership × xGI/90 × price | 3 |
-| Price rise/fall next 24h | **our own snapshots** + `price_change_percent` | 1 collect, 4 model |
-| Which teams are performing | Understat xG/xGA, ClubElo | 2–3 |
-| Which teams play defensively | **Understat PPDA + deep completions** | 2–3 |
-| Better fixture difficulty | de-vigged bookmaker odds | 2–3 |
-| DEFCON bankers | FPL `defensive_contribution_per_90` | 3 |
-| Set-piece threat | FPL taker orders (free, first-party) | 3 |
-| Beat *your* mini-league | `leagues-classic` + `entry/.../picks` | 5 |
+| Who's performing right now | FPL `form`, xGI/90, DEFCON/90 | Week 2 |
+| Hidden gems | FPL ownership × xGI/90 × price | Week 3 |
+| Price rise/fall next 24h | **our own snapshots** + `price_change_percent` | collecting now, screen Week 4 |
+| Which teams are performing | Understat xG/xGA, ClubElo | Week 3 |
+| Which teams play defensively | **Understat PPDA + deep completions** | Week 3 |
+| Better fixture difficulty | de-vigged bookmaker odds | Week 3 |
+| DEFCON bankers | FPL `defensive_contribution_per_90` | Week 2 |
+| Set-piece threat | FPL taker orders | Week 3 |
+| Beat *your* mini-league | `leagues-classic` + `entry/.../picks` | After GW1 |
 
 ---
 
-## Risks
+## 6. Risks
 
 | Risk | Mitigation |
 |---|---|
-| A Tier 2 scrape breaks (it happened twice to FBref in a year) | Cache raw payloads to disk/storage on every run. An outage then costs future data, not past data. Probe script gates CI. |
-| Preseason carry-over corrupts 2026/27 stats | Tag every aggregate with the season it belongs to at ingest. `history == []` and `form == 0.0` are the reliable preseason tells. |
-| Season-scoped FPL `id` reused across seasons | Key everything on the stable `code` / `element_code`. |
-| GitHub Actions cron drifts or is skipped under load | `sync_runs` table + a staleness check; hourly job is idempotent so a missed run self-heals. |
-| Name matching FPL ↔ Understat ↔ Sofascore | Resolve once into `player_external_ids`, log unmatched for review — same discipline as SDG's `tmp/<source>-unmatched.json`. |
-| Scope creep before GW1 | Phases 1–3 are the only ones that must land by 2026-08-21. Phase 5 is the fun one; it's deliberately after. |
+| A Tier 2 source breaks — FBref lost two feeds in a year | Cache raw payloads; the weekly probe gates CI and names what failed. An outage costs future data, not past. |
+| Four weeks with no slack | Week 4 is deliberately light. If it slips, price watch is the thing to cut — it shows nothing before GW1 anyway. |
+| Scope creep into the web app | Weeks 1–2 are data. Resist starting UI before the views exist; a pretty table over wrong numbers is worse than no table. |
+| `player_snapshots` outgrows the free tier | Insert-on-change (proven by `prove_snapshot_logic.py`), plus a 45-day rollup to daily. `verify` prints total size every run. |
+| Actions cron drifts or is skipped | Every job is idempotent, so a missed run self-heals. `sync_freshness` makes staleness visible. |
+| FPL-Core-Insights disappears (one volunteer, no SLA) | Mirror what we consume into our own tables; never read it live at request time. |
 
 ---
 
-## Conventions
+## 7. Conventions
 
-Carried over from the reference projects because they worked:
-
-- Migrations are **append-only and idempotent** (`if not exists`); `drop`+`create` for
-  views in a new numbered migration.
+- Migrations are **append-only and idempotent** (`if not exists`); views get `drop` +
+  `create` in a new numbered migration.
 - **Any change to a data source or derived metric updates
-  [DATA_SOURCES.md](DATA_SOURCES.md) in the same commit.** This is what kept SDG
-  debuggable.
-- Every sync job records to `sync_runs`, and is safe to re-run.
-- Docs and code in English; commit messages and conversation in Norwegian as you prefer.
+  [DATA_SOURCES.md](DATA_SOURCES.md) in the same commit.** This is what keeps the project
+  debuggable, and it has already caught two of our own wrong claims.
+- Every sync job records to `sync_runs` and is safe to re-run.
+- New source → `sync/jobs/*.py` exposing `run(client, *, dry_run=False) -> dict`,
+  registered in `sync/cli.py:JOBS`, plus a check in `scripts/probe/probe_sources.py`.
+- Docs and code in English; commit messages and conversation in Norwegian.
