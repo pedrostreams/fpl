@@ -171,6 +171,8 @@ export type GemRow = {
   status: string | null
   news: string | null
   penaltiesOrder: number | null
+  chanceOfPlaying: number | null
+  minutesShare: number | null
 }
 
 export async function getHiddenGems(limit = 60): Promise<GemRow[]> {
@@ -178,7 +180,8 @@ export async function getHiddenGems(limit = 60): Promise<GemRow[]> {
     `select player_code, web_name, position, team_short, price, selected_by_percent,
             minutes, total_points, xgi_per_90, defcon_per_90, xgc_per_90,
             points_per_million, output_percentile, differential_percentile,
-            value_percentile, gem_score, is_available, status, news, penalties_order
+            value_percentile, gem_score, is_available, status, news, penalties_order,
+            chance_of_playing, minutes_share
      from hidden_gems limit $1`,
     [limit],
   )
@@ -203,6 +206,8 @@ export async function getHiddenGems(limit = 60): Promise<GemRow[]> {
     status: (r.status as string) ?? null,
     news: (r.news as string) ?? null,
     penaltiesOrder: num(r.penalties_order),
+    chanceOfPlaying: num(r.chance_of_playing),
+    minutesShare: num(r.minutes_share),
   }))
 }
 
@@ -620,8 +625,13 @@ export type CaptainPick = {
   isHome: boolean
   gameweek: number | null
   xgiPer90: number | null
-  minutesSecurity: number | null
   penaltiesOrder: number | null
+  /** Share of the team's available minutes. The fix for a "Safe" axis that ranked a player
+   *  on 17% of a season identically to one on 86%. */
+  minutesShare: number | null
+  startRate: number | null
+  chanceOfPlaying: number | null
+  minutes: number | null
   /** Poisson from the fixture model's lambda — what a captain actually depends on. */
   pTeamScores: number | null
   pTeamScores2Plus: number | null
@@ -648,7 +658,8 @@ export type CaptainPick = {
 export async function getCaptainPicks(limit = 10): Promise<CaptainPick[]> {
   const rows = await query<Record<string, unknown>>(
     `select player_code, web_name, position, team_short, price, selected_by_percent,
-            opponent_short, opponent_name, is_home, gameweek, xgi_per_90, minutes_security,
+            opponent_short, opponent_name, is_home, gameweek, xgi_per_90,
+            minutes, minutes_share, start_rate, chance_of_playing,
             penalties_order, p_team_scores, p_team_scores_2plus,
             big_chances_per_90, shots_in_box_per_90, non_penalty_xg_per_90, has_shot_data,
             floor_score, ceiling_score, combined_score,
@@ -669,8 +680,11 @@ export async function getCaptainPicks(limit = 10): Promise<CaptainPick[]> {
     isHome: Boolean(r.is_home),
     gameweek: num(r.gameweek),
     xgiPer90: num(r.xgi_per_90),
-    minutesSecurity: num(r.minutes_security),
     penaltiesOrder: num(r.penalties_order),
+    minutesShare: num(r.minutes_share),
+    startRate: num(r.start_rate),
+    chanceOfPlaying: num(r.chance_of_playing),
+    minutes: num(r.minutes),
     pTeamScores: num(r.p_team_scores),
     pTeamScores2Plus: num(r.p_team_scores_2plus),
     bigChancesPer90: num(r.big_chances_per_90),

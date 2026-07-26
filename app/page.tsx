@@ -254,8 +254,8 @@ export default async function Dashboard() {
               'No player qualifies yet.'
             ) : (
               <>
-                Under 10% owned with a reliable sample. <strong>{gems[0].webName}</strong> scores
-                highest on output, scarcity and value combined.
+                Under 10% owned, fit, and with a reliable sample. <strong>{gems[0].webName}</strong>{' '}
+                scores highest on output, scarcity and value combined.
               </>
             )
           }

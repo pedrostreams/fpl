@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { PlayerPhoto } from '@/components/player-photo'
 import { WatchButton } from '@/components/watch-button'
-import { POSITION_VAR, fmt, fmtPct } from '@/lib/format'
+import { POSITION_VAR, fmt, fmtInt, fmtPct } from '@/lib/format'
 import type { CaptainPick } from '@/lib/queries'
 
 /**
@@ -189,6 +189,19 @@ export function CaptainPanel({
                   </span>
                 )}
               </div>
+              {/* The raw availability figure, in words, above the rank bars. A percentile is
+                  not enough here: the previous version scored a player on 17% of a season the
+                  same as one on 86%, and nothing on screen would have shown you. */}
+              <div className="mt-0.5 text-[11px]" style={{ color: 'var(--faint)' }}>
+                played{' '}
+                <strong style={{ color: 'var(--muted)' }}>
+                  {fmtPct((c.minutesShare ?? 0) * 100, 0)}
+                </strong>{' '}
+                of last season ({fmtInt(c.minutes)} min) · xGI {fmt(c.xgiPer90, 2)}
+                {c.chanceOfPlaying !== null && c.chanceOfPlaying < 100 && (
+                  <span style={{ color: 'var(--warn)' }}> · {c.chanceOfPlaying}% to play</span>
+                )}
+              </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
                 {L.parts.map((p) => (
                   <RankBar key={p.key} value={c.ranks[p.key]} label={p.label} />
@@ -215,8 +228,11 @@ export function CaptainPanel({
         {/* Not `picks.length` — that is the display limit, not the pool. The ranks are computed
             in SQL across every candidate, and quoting 30 here understated it by an order of
             magnitude. */}
-        Ranks are percentiles across every candidate clearing 450 minutes, averaged — not raw
-        values multiplied, which would let whichever metric has the widest spread dominate. Deliberately <em>not</em> called expected points: there is no minutes model or
+        Every candidate is fit right now <em>and</em> played at least half of last season — a
+        hard gate, not a factor to be outweighed by a kind fixture, because &ldquo;will he
+        play&rdquo; is a precondition for an armband. Ranks are percentiles across that pool,
+        averaged, not raw values multiplied, which would let whichever metric has the widest
+        spread dominate. Deliberately <em>not</em> called expected points: there is no minutes model or
         bonus model behind it, so every component is on screen. Big chances are shots of xG ≥
         0.3; <strong>npxG</strong> excludes penalties, which is only possible because the
         penalty label had to be repaired first.
