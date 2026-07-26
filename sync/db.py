@@ -101,7 +101,7 @@ def insert_ignore(
     conn: psycopg.Connection,
     table: str,
     rows: Sequence[dict[str, Any]],
-    conflict: Sequence[str],
+    conflict: Sequence[str] | None,
     *,
     chunk: int = CHUNK,
 ) -> int:
@@ -109,17 +109,27 @@ def insert_ignore(
 
     `do nothing` makes a re-run within the same capture instant a no-op instead of an
     error, which is what lets a retried GitHub Actions job be safe.
+
+    Pass `conflict=None` for a bare `on conflict do nothing`, which absorbs *any*
+    constraint rather than one named target. Needed by `player_external_ids`, which has two
+    unique constraints — (player_code, source) and (source, external_id) — and a remapped
+    player would otherwise trip the one not being watched.
     """
     if not rows:
         return 0
     cols = list(rows[0].keys())
+    target = (
+        sql.SQL("")
+        if conflict is None
+        else sql.SQL(" ({})").format(sql.SQL(", ").join(map(sql.Identifier, conflict)))
+    )
     stmt = sql.SQL(
-        "insert into {table} ({cols}) values ({vals}) on conflict ({conflict}) do nothing"
+        "insert into {table} ({cols}) values ({vals}) on conflict{target} do nothing"
     ).format(
         table=sql.Identifier(table),
         cols=sql.SQL(", ").join(map(sql.Identifier, cols)),
         vals=sql.SQL(", ").join(sql.Placeholder() * len(cols)),
-        conflict=sql.SQL(", ").join(map(sql.Identifier, conflict)),
+        target=target,
     )
     total = 0
     wrapped = _wrap_json(list(rows))

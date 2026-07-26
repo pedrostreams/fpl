@@ -18,12 +18,13 @@ from typing import Any
 
 from . import config
 from .fpl import FplClient
-from .jobs import dimensions, history, snapshot, verify
+from .jobs import dimensions, history, snapshot, understat, verify
 
 JOBS = {
     "dimensions": dimensions.run,
     "snapshot": snapshot.run,
     "history": history.run,
+    "understat": understat.run,
     "verify": verify.run,
 }
 
@@ -43,6 +44,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="skip writing raw payloads to tmp/raw")
     parser.add_argument("--reap-stale", action="store_true",
                         help="verify only: mark sync_runs rows stuck on 'running' as errors")
+    parser.add_argument("--season", default=None,
+                        help="enrichment jobs: season to pull, e.g. 2025-26 "
+                             "(defaults to the last completed season in preseason)")
     args = parser.parse_args(argv)
 
     config.load_dotenv()
@@ -59,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
             kwargs["limit"] = args.limit
         if name == "verify":
             kwargs["reap_stale"] = args.reap_stale
+        if name in ("understat",):
+            kwargs["season"] = args.season
         try:
             result = JOBS[name](client, **kwargs)
             # verify is read-only and formats its own tables; a JSON dump would just
