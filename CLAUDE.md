@@ -33,6 +33,14 @@ python -m sync.cli verify                        # post-sync sanity + storage gr
 There is no test runner. `--dry-run`, the probe scripts, and `verify` are the verification
 path. The two `prove_*` scripts run without a database or network, so they gate CI.
 
+**Nothing is `finished` until 2026-08-21**, so every code path keyed on an in-progress season
+is unexercised by the data. That is how the fixture ticker shipped with incomparable totals:
+`fixture_run` looked correct and had never run against the state it will spend the whole season
+in. To exercise one, simulate rather than wait — either rewrite `finished` as
+`kickoff_time < <cutoff>` inside a copy of the view's SQL, or briefly `update fixtures set
+finished = true` for a few GW1 rows with the revert in a `finally`. `dimensions` re-syncs
+`finished` from the API daily, so even a crashed run self-heals.
+
 ## The three things that will bite you
 
 1. **Preseason carry-over.** Until GW1, `bootstrap-static.elements` aggregates describe

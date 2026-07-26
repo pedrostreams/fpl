@@ -312,10 +312,18 @@ export type TickerTeam = {
   /** Indexed by gameweek. Length 0 is a blank, length 2 a double. */
   byGameweek: Record<number, TickerFixture[]>
   run: {
+    /** Fixtures left inside the window. Not the same for every club mid-gameweek, which is
+     *  why every metric below comes as both a rate and a total. */
     fixtures: number
     avgDifficulty: number | null
     avgAttackDifficulty: number | null
     avgDefenceDifficulty: number | null
+    // Per fixture — comparable between clubs whatever the window size.
+    pWinPerFixture: number | null
+    xgForPerFixture: number | null
+    pCleanSheetPerFixture: number | null
+    // Summed over the window — what a manager accumulates, and where a double gameweek
+    // shows up as a gain. Only comparable between clubs with the same `fixtures`.
     expectedGoalsFor: number | null
     expectedGoalsAgainst: number | null
     expectedCleanSheets: number | null
@@ -352,6 +360,7 @@ export async function getFixtureTicker(): Promise<Ticker> {
       o.short_name as opponent_short, o.name as opponent_name,
       e.elo,
       fr.fixtures, fr.avg_difficulty, fr.avg_attack_difficulty, fr.avg_defence_difficulty,
+      fr.p_win_per_fixture, fr.xg_for_per_fixture, fr.p_clean_sheet_per_fixture,
       fr.expected_goals_for as run_xg_for, fr.expected_goals_against as run_xg_against,
       fr.expected_clean_sheets, fr.expected_wins
     from fixture_difficulty fd
@@ -388,6 +397,9 @@ export async function getFixtureTicker(): Promise<Ticker> {
           avgDifficulty: num(r.avg_difficulty),
           avgAttackDifficulty: num(r.avg_attack_difficulty),
           avgDefenceDifficulty: num(r.avg_defence_difficulty),
+          pWinPerFixture: num(r.p_win_per_fixture),
+          xgForPerFixture: num(r.xg_for_per_fixture),
+          pCleanSheetPerFixture: num(r.p_clean_sheet_per_fixture),
           expectedGoalsFor: num(r.run_xg_for),
           expectedGoalsAgainst: num(r.run_xg_against),
           expectedCleanSheets: num(r.expected_clean_sheets),

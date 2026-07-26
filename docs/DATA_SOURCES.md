@@ -292,9 +292,19 @@ unlike FDR it is continuous, opponent-adjusted, and has real history for backtes
 here that is *forward-looking* — see §3.4 for why the odds cannot be — and it covers all 20
 clubs including the promoted three, because Elo carries over from the Championship. That
 makes it the one metric on the teams page with no promoted-club blind spot.
-`elo_now` (migration 0007) exposes each club's current rating: `distinct on (team_code)`
-ordered by `valid_from desc`, because ClubElo carries the current rating forward on
-future-dated rows and an upcoming fixture wants today's strength, not a future stamp.
+`elo_now` (migration 0008) exposes each club's current rating: `distinct on (team_code)`
+ordered by `valid_from desc`, **bounded to `valid_from <= current_date`**. ClubElo splits the
+current rating across forward-dated rows — Arsenal on 2026-07-26 had rows starting 2026-05-31,
+08-22 and 08-31, all at 2063.8 — and without the bound the view reads the furthest-future one.
+Harmless while those rows agree, which was verified for all 20 clubs, and silently wrong the
+day ClubElo forward-publishes a projection.
+
+Derived from it, in migration 0008: `fixture_run` gives every metric as **both a per-fixture
+rate and a total over the window**. Mid-gameweek the two disagree, because a gameweek spans
+Friday to Monday and clubs that have already played hold fewer remaining fixtures. Simulation
+showed the entire top six reordering between the two — a club dropping from 3rd to 6th purely
+for having one fewer fixture left. Rates are the comparable quantity; totals are what a
+manager accumulates and are the only place a double gameweek shows as a gain.
 
 ### 3.4 football-data.co.uk — bookmaker odds
 

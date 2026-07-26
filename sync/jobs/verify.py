@@ -398,12 +398,23 @@ def run(
                 ("position_difficulty_in_range", "attack/defence difficulty outside [0,1]"),
                 ("clean_sheet_in_range", "clean-sheet probability outside [0,1]"),
                 ("home_advantage_present", "home sides are not favoured — an Elo sign is wrong"),
+                ("run_rate_matches_total",
+                 "fixture_run's per-fixture rate x fixtures does not reconstruct the total"),
+                ("elo_is_not_future_dated",
+                 "elo_now is reading a forward-dated ClubElo row instead of today's rating"),
             ):
                 if f[flag] is False:
                     problems.append(f"fixture_difficulty: {message}")
             if f["teams"] and f["teams"] != 20:
                 problems.append(f"fixture_difficulty covers {f['teams']} teams, expected 20 "
                                 f"— a club has no Elo rating")
+            # Not a fault. Mid-gameweek some clubs have played and some haven't, so their
+            # windows hold different numbers of fixtures — that is exactly why the per-fixture
+            # rates exist. Report it so the state is visible rather than surprising.
+            if (f["distinct_window_sizes"] or 0) > 1:
+                print(f"\n    note: teams have {f['distinct_window_sizes']} different window "
+                      f"sizes in the ticker — normal mid-gameweek; compare on the "
+                      f"per-fixture rates, not the totals")
             # The goal model was fitted to a league mean of 1.373 goals per side. Drifting far
             # from that means the Elo join is picking up the wrong ratings.
             if f["avg_expected_goals"] is not None and not (

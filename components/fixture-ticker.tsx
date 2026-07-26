@@ -16,31 +16,43 @@ const LENSES = {
     hint: 'Chance of winning',
     of: (f: TickerFixture) => f.difficulty,
     summary: (t: TickerTeam) => t.run.avgDifficulty,
-    metric: (t: TickerTeam) => t.run.expectedWins,
-    metricLabel: 'xWins',
-    metricDigits: 2,
-    metricHint:
-      'Expected wins across the run — the sum of win probabilities, so a double gameweek counts twice',
+    rate: (t: TickerTeam) => t.run.pWinPerFixture,
+    rateLabel: 'Win/gm',
+    rateDigits: 3,
+    rateHint: 'Mean win probability per fixture — comparable however many fixtures a team has',
+    total: (t: TickerTeam) => t.run.expectedWins,
+    totalLabel: 'xWins',
+    totalDigits: 2,
+    totalHint:
+      'Expected wins summed across the run. Depends on how many fixtures fall in the window, so compare it only between teams with the same count.',
   },
   attack: {
     label: 'Attack',
     hint: 'How hard it is to score',
     of: (f: TickerFixture) => f.attackDifficulty,
     summary: (t: TickerTeam) => t.run.avgAttackDifficulty,
-    metric: (t: TickerTeam) => t.run.expectedGoalsFor,
-    metricLabel: 'xG',
-    metricDigits: 1,
-    metricHint: 'Expected goals for, summed across the run',
+    rate: (t: TickerTeam) => t.run.xgForPerFixture,
+    rateLabel: 'xG/gm',
+    rateDigits: 2,
+    rateHint: 'Expected goals per fixture',
+    total: (t: TickerTeam) => t.run.expectedGoalsFor,
+    totalLabel: 'xG',
+    totalDigits: 1,
+    totalHint: 'Expected goals summed across the run',
   },
   defence: {
     label: 'Defence',
     hint: 'How hard it is to keep a clean sheet',
     of: (f: TickerFixture) => f.defenceDifficulty,
     summary: (t: TickerTeam) => t.run.avgDefenceDifficulty,
-    metric: (t: TickerTeam) => t.run.expectedCleanSheets,
-    metricLabel: 'xCS',
-    metricDigits: 2,
-    metricHint: 'Expected clean sheets, summed across the run',
+    rate: (t: TickerTeam) => t.run.pCleanSheetPerFixture,
+    rateLabel: 'CS/gm',
+    rateDigits: 3,
+    rateHint: 'Clean-sheet probability per fixture',
+    total: (t: TickerTeam) => t.run.expectedCleanSheets,
+    totalLabel: 'xCS',
+    totalDigits: 2,
+    totalHint: 'Expected clean sheets summed across the run',
   },
 } as const
 
@@ -132,6 +144,14 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
       .map((gw) => ({ t, gw })),
   )
 
+  // A gameweek runs Friday to Monday, so once the season starts some clubs have played the
+  // current one and others have not. Their windows then hold different numbers of fixtures,
+  // which leaves the totals incomparable while the per-fixture rates stay honest. Say so
+  // rather than letting the reader assume every row covers the same span.
+  const windowSizes = [...new Set(teams.map((t) => t.run.fixtures))].sort((a, b) => b - a)
+  const fullWindow = windowSizes[0] ?? 0
+  const mixedWindows = windowSizes.length > 1
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -161,6 +181,24 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
           {L.hint} · easiest run first
         </span>
       </div>
+
+      {mixedWindows && (
+        <div
+          className="rounded-xl border px-4 py-3 text-[13px]"
+          style={{
+            background: 'color-mix(in oklab, var(--warn) 9%, var(--surface))',
+            borderColor: 'color-mix(in oklab, var(--warn) 28%, var(--border))',
+          }}
+        >
+          <strong>The window is not the same size for every club.</strong> A gameweek spans
+          several days, so clubs that have already played the current one have{' '}
+          {windowSizes.join(' or ')} fixtures left in these {ticker.gameweeks.length}{' '}
+          gameweeks. Sort and compare on <strong>{L.rateLabel}</strong> — the per-fixture rate,
+          which holds regardless. <strong>{L.totalLabel}</strong> is a sum, so it rewards
+          simply having more fixtures left; read it only against clubs with the same count in
+          the <strong>#</strong> column.
+        </div>
+      )}
 
       {(doubles.length > 0 || blanks.length > 0) && (
         <div className="text-[12px]" style={{ color: 'var(--muted)' }}>
@@ -217,9 +255,29 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
                   background: 'var(--surface-2)',
                   color: 'var(--muted)',
                 }}
-                title={L.metricHint}
+                title={L.rateHint}
               >
-                {L.metricLabel}
+                {L.rateLabel}
+              </th>
+              <th
+                className="sticky top-0 z-20 border-b px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-wide"
+                style={{
+                  background: 'var(--surface-2)',
+                  color: 'var(--muted)',
+                }}
+                title={L.totalHint}
+              >
+                {L.totalLabel}
+              </th>
+              <th
+                className="sticky top-0 z-20 border-b px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-wide"
+                style={{
+                  background: 'var(--surface-2)',
+                  color: 'var(--muted)',
+                }}
+                title="Fixtures remaining in the window. The totals are only comparable between clubs with the same number."
+              >
+                #
               </th>
               {ticker.gameweeks.map((gw) => (
                 <th
@@ -238,6 +296,7 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
           <tbody>
             {teams.map((t) => {
               const s = L.summary(t)
+              const short = t.run.fixtures < fullWindow
               return (
                 <tr key={t.teamCode}>
                   <td
@@ -261,9 +320,36 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
                       <span className="num block px-2 py-1 text-right">{fmt(s, 3)}</span>
                     </div>
                   </td>
+                  {/* Rate first, because it is the one that is always comparable. */}
                   <td className="border-b px-2 py-1 text-right">
                     <span className="num text-[12px]">
-                      {fmt(L.metric(t), L.metricDigits)}
+                      {fmt(L.rate(t), L.rateDigits)}
+                    </span>
+                  </td>
+                  <td className="border-b px-2 py-1 text-right">
+                    <span
+                      className="num text-[12px]"
+                      style={{ color: short ? 'var(--faint)' : 'var(--muted)' }}
+                      title={
+                        short
+                          ? `Only ${t.run.fixtures} of ${fullWindow} fixtures left in the window, so this total is not comparable with the rest`
+                          : undefined
+                      }
+                    >
+                      {fmt(L.total(t), L.totalDigits)}
+                    </span>
+                  </td>
+                  <td className="border-b px-2 py-1 text-right">
+                    <span
+                      className="num text-[12px]"
+                      style={{ color: short ? 'var(--warn)' : 'var(--faint)' }}
+                      title={
+                        short
+                          ? 'Fewer fixtures than the fullest window — already played this gameweek, or a blank'
+                          : undefined
+                      }
+                    >
+                      {t.run.fixtures}
                     </span>
                   </td>
                   {ticker.gameweeks.map((gw) => (
@@ -296,6 +382,11 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
           <strong style={{ color: 'var(--muted)' }}>ars</strong> away
         </span>
         <span>The number beside each club is its current Elo rating.</span>
+        <span>
+          <strong style={{ color: 'var(--muted)' }}>{L.rateLabel}</strong> is per fixture and
+          always comparable; <strong style={{ color: 'var(--muted)' }}>{L.totalLabel}</strong>{' '}
+          is a sum over the <strong style={{ color: 'var(--muted)' }}>#</strong> fixtures left.
+        </span>
       </div>
     </div>
   )

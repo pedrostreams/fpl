@@ -138,6 +138,12 @@ A second established pattern, in [components/fixture-ticker.tsx](../../component
   table, because it is the single most actionable thing on the screen.
 - **Difficulty is inverted for colour** (`--p = 1 - difficulty`), because 0 means easiest and
   colour means better.
+- **A rate and a total are different columns, never one column.** A gameweek spans Friday to
+  Monday, so mid-gameweek some clubs have played it and others haven't, and their windows hold
+  different numbers of fixtures. The per-fixture rate stays comparable; the sum silently
+  rewards having more fixtures left. Both are shown, the fixture count `#` beside them, and a
+  banner appears only while the windows actually differ. Generalise the rule: **when an
+  aggregate's denominator varies between rows, put the denominator on screen.**
 
 ## 5. Page skeleton
 
@@ -255,6 +261,8 @@ Recorded, not decided. Do not resolve these silently in a feature commit.
    questions ("who do they play" versus "how do they play") and are used together, which is why
    they share a route. If it feels crowded, splitting the ticker onto `/fixtures` is the
    obvious move — but then the two tables can no longer be read side by side.
-10. **The ticker's blank and double paths are unexercised.** No gameweek in GW1–6 currently has
+10. **The ticker's blank and double paths are still unexercised.** No gameweek in GW1–6 has
     anything but exactly one fixture per club, because reschedules haven't happened yet. Both
-    code paths are written and neither has rendered real data.
+    code paths are written and neither has rendered real data. The *mixed-window* path has
+    been exercised, by briefly marking GW1's early fixtures finished against the live database
+    and reverting — see the note in `CLAUDE.md` on how to repeat that.
