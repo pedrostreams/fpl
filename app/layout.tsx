@@ -32,7 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 className="hidden text-[11px] font-medium uppercase tracking-widest sm:inline"
                 style={{ color: 'var(--faint)' }}
               >
-                free data
+                tanberg
               </span>
             </Link>
             <nav className="flex items-center gap-1">

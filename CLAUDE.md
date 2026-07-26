@@ -118,6 +118,14 @@ letting a unique constraint drop one silently.
 
 ## Architecture map
 
+- `sync/cli.py` — **job modules are imported lazily, and that is load-bearing.** Importing them
+  all eagerly meant `python -m sync.cli snapshot` pulled in `clubelo`, whose top-level
+  `curl_cffi` import is an enrichment dependency the hourly snapshot workflow deliberately does
+  not install. The hourly job died with `ModuleNotFoundError` before running a line — breaking
+  the one table that cannot be backfilled. Adding the dependency to that workflow would have
+  fixed the symptom and left the coupling. **Never import a job at `cli.py` module level.**
+- `sync/sources/understat_raw.py` — repairs three shot enum values `soccerdata` drops to NaN.
+  See `docs/DATA_SOURCES.md` §3.1; without it, non-penalty xG silently counts penalties.
 - `sync/config.py` — env + **season resolution**. `season_label`, `is_preseason`,
   `aggregates_season`. Preseason is detected two independent ways (no `is_current` event
   *and* no `finished` event) so one flag quirk can't mislabel an ingest.

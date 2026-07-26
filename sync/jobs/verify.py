@@ -423,6 +423,30 @@ def run(
                                 f"{f['avg_expected_goals']} expected goals per side, "
                                 f"outside the plausible 1.1-1.7")
 
+        cap = db.fetch(conn, "select * from captain_check")
+        if cap:
+            print("\n=== captain_picks (floor / ceiling, rank-aggregated) ===")
+            print(_fmt(cap))
+            c = cap[0]
+            for flag, message in (
+                ("floor_in_range", "floor_score outside [0,1]"),
+                ("ceiling_in_range", "ceiling_score outside [0,1]"),
+                ("scoring_probs_in_range", "a team-scoring probability outside [0,1]"),
+                ("tail_ordered", "P(2+ goals) exceeds P(1+) — the Poisson tail is inverted"),
+                # The whole point of the repair in sync/sources/understat_raw.py. If this goes
+                # false, non-penalty xG is silently counting penalties again.
+                ("shot_attributes_repaired",
+                 "understat_shots has NULL situation or body_part — soccerdata's dropped enum "
+                 "values are no longer being repaired"),
+            ):
+                if c[flag] is False:
+                    problems.append(f"captain_picks: {message}")
+            # Two axes that rank identically are one axis with extra steps.
+            corr = c["floor_ceiling_corr"]
+            if corr is not None and float(corr) > 0.95:
+                problems.append(f"captain_picks: floor and ceiling correlate at {corr} — the "
+                                f"two-axis split has stopped distinguishing anything")
+
         mv = db.fetch(conn, "select * from movement_check")
         if mv:
             print("\n=== player_movement (our own snapshot series) ===")

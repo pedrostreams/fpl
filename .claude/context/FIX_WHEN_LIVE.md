@@ -116,6 +116,19 @@ duplicate or delete a `fixtures` row inside a transaction, render, roll back.
       (`element_types.defcon_threshold`). Build from `player_gw_stats` and add it to `/scout`
 - [ ] Reliability floor makes sense again — enough minutes accrued that percentiles mean
       something
+- [ ] **Switch the captain model to a rolling six-gameweek window.** `player_shot_profile` and
+      `captain_picks` are whole-season today because `player_gw_stats` is empty; the `basis`
+      column reads `'season'` and should become `'last_6_gameweeks'`. Recency is the one thing
+      allaboutfpl's method has that ours does not — everything else from that article is in.
+- [ ] **Replace `minutes_security` with a real minutes model.** Starts-per-appearance is a
+      preseason stand-in, and `cume_dist` puts every full-time starter at 1.000, so the component
+      currently discriminates almost nothing. Per-match minutes from `player_gw_stats` would give
+      it teeth — rotation risk is where captaincy is actually lost.
+- [ ] **Confirm the soccerdata enum repair still fires.** `verify` fails if `situation` or
+      `body_part` goes NULL, but check `shot_attribute_repair` in the understat job output:
+      `situation_filled` should be ~92 per season and `body_part_filled` ~1 800. If both drop to
+      0 *and* no NULLs appear, soccerdata has fixed its mapping and the repair is a harmless
+      no-op. If both drop to 0 *and* NULLs appear, the raw cache layout changed.
 - [ ] **Validate, do not refit, the Elo model.** Once `2627/E0.csv` exists, compare
       `fixture_difficulty.p_win` against the new season's de-vigged odds and confirm the
       Spearman is still ~0.92. `calibrate_elo_fixtures.py` refuses to refit under 100 matches

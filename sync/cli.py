@@ -16,23 +16,33 @@ import json
 import sys
 from typing import Any
 
+from importlib import import_module
+
 from . import config
 from .fpl import FplClient
-from .jobs import (
-    clubelo, core_insights, dimensions, history, manager, odds, snapshot, understat, verify,
+
+# Job names, resolved to modules only when actually invoked.
+#
+# THIS IMPORT MUST STAY LAZY. Importing every job eagerly meant `python -m sync.cli snapshot`
+# pulled in `clubelo`, whose top-level `from curl_cffi import requests` is an enrichment
+# dependency the hourly snapshot workflow deliberately does not install — it installs only
+# psycopg and requests, to stay fast at 24 runs a day. The result was
+# `ModuleNotFoundError: No module named 'curl_cffi'` before the snapshot job ran a single line,
+# breaking the one table in this project that cannot be backfilled. Observed failing on the
+# 20:56 scheduled run, 2026-07-26.
+#
+# Adding curl_cffi to that workflow would have fixed the symptom and left the coupling: any
+# future enrichment dependency would break the hourly job again. Resolving on demand means a
+# job can only be broken by its own imports.
+JOBS = (
+    "dimensions", "snapshot", "history", "understat", "core_insights",
+    "clubelo", "odds", "manager", "verify",
 )
 
-JOBS = {
-    "dimensions": dimensions.run,
-    "snapshot": snapshot.run,
-    "history": history.run,
-    "understat": understat.run,
-    "core_insights": core_insights.run,
-    "clubelo": clubelo.run,
-    "odds": odds.run,
-    "manager": manager.run,
-    "verify": verify.run,
-}
+
+def job_runner(name: str):
+    """Import `sync.jobs.<name>` and return its `run`. Raises only for that one job."""
+    return import_module(f".jobs.{name}", package=__package__).run
 
 # Jobs that accept --season.
 SEASON_JOBS = ("understat", "odds", "core_insights")
@@ -91,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         if name == "understat":
             kwargs["rematch"] = args.rematch
         try:
-            result = JOBS[name](client, **kwargs)
+            result = job_runner(name)(client, **kwargs)
             # verify is read-only and formats its own tables; a JSON dump would just
             # repeat what it already printed.
             if name == "verify":

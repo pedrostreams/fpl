@@ -1,3 +1,4 @@
+import { CaptainPanel } from '@/components/captain-panel'
 import { Metric, Panel, PlayerLine, RunPips } from '@/components/dash'
 import { WatchButton } from '@/components/watch-button'
 import { fmt, fmtInt, fmtPct, fmtPrice, fmtSigned, relativeAge } from '@/lib/format'
@@ -12,6 +13,7 @@ import {
   getSyncHealth,
   getTeamTargets,
   getWatchlist,
+  getWatchlistCodes,
 } from '@/lib/queries'
 
 export const revalidate = 300
@@ -37,12 +39,12 @@ function daysUntil(iso: string | null): number | null {
 export default async function Dashboard() {
   const [
     ctx, manager, watchlist, captains, attackRuns, defenceRuns, gems, form, matches,
-    coverage, health,
+    coverage, health, watchedCodes,
   ] = await Promise.all([
     getSeasonContext(),
     getManager(),
     getWatchlist(),
-    getCaptainPicks(6),
+    getCaptainPicks(30),
     getTeamTargets('attack', 5),
     getTeamTargets('defence', 5),
     getHiddenGems(6),
@@ -50,6 +52,7 @@ export default async function Dashboard() {
     getNextMatches(10),
     getSnapshotCoverage(),
     getSyncHealth(),
+    getWatchlistCodes(),
   ])
 
   const gw = captains[0]?.gameweek ?? matches[0]?.gameweek ?? null
@@ -171,61 +174,15 @@ export default async function Dashboard() {
           )}
         </Panel>
 
-        {/* ---- captain ---- */}
-        <Panel
-          title={gw === null ? 'Captain' : `Captain · GW${gw}`}
-          lead={
-            captains.length === 0 ? (
-              'No candidate clears the 450-minute reliability floor yet.'
-            ) : (
-              <>
-                <strong>{captains[0].webName}</strong> leads on output × fixture × minutes
-                security — {captains[0].isHome ? 'home to' : 'away at'}{' '}
-                {captains[0].opponentName}, {fmtPct((captains[0].pWin ?? 0) * 100, 0)} to win.
-              </>
-            )
-          }
-        >
-          <div className="flex flex-col gap-2.5">
-            {captains.map((c, i) => (
-              <PlayerLine
-                key={c.playerCode}
-                playerCode={c.playerCode}
-                webName={c.webName}
-                position={c.position}
-                teamShort={c.teamShort}
-                sub={
-                  <>
-                    {c.isHome ? 'v ' : '@ '}
-                    {c.opponentShort} · win {fmtPct((c.pWin ?? 0) * 100, 0)} · xGI{' '}
-                    {fmt(c.xgiPer90, 2)} · starts {fmtPct((c.minutesSecurity ?? 0) * 100, 0)}
-                    {c.penaltiesOrder === 1 && ' · pens'}
-                  </>
-                }
-                right={
-                  <span
-                    className="num rounded px-1.5 py-0.5 text-[12px] font-bold"
-                    style={{
-                      background:
-                        i === 0
-                          ? 'color-mix(in oklab, var(--accent) 20%, transparent)'
-                          : 'transparent',
-                      color: i === 0 ? 'var(--accent)' : 'var(--muted)',
-                    }}
-                    title="Output × fixture ease × minutes security. A heuristic, not a points projection."
-                  >
-                    {fmt(c.captainScore, 3)}
-                  </span>
-                }
-                action={<WatchButton playerCode={c.playerCode} watched={false} />}
-              />
-            ))}
-          </div>
-          <p className="text-[11px]" style={{ color: 'var(--faint)' }}>
-            xGI/90 × fixture ease × starts-per-appearance. Deliberately <em>not</em> called
-            expected points — there is no minutes model or bonus model behind it yet, so all
-            three factors are shown rather than hidden in one number.
-          </p>
+        {/* ---- captain: two axes, see components/captain-panel.tsx ---- */}
+        <Panel title={gw === null ? 'Captain' : `Captain · GW${gw}`}>
+          {captains.length === 0 ? (
+            <p className="text-[13px]" style={{ color: 'var(--muted)' }}>
+              No candidate clears the 450-minute reliability floor yet.
+            </p>
+          ) : (
+            <CaptainPanel picks={captains} watchedCodes={watchedCodes} />
+          )}
         </Panel>
 
         {/* ---- teams to target ---- */}

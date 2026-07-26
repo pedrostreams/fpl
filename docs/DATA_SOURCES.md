@@ -226,6 +226,32 @@ caches aggressively and will happily serve a partial mid-season snapshot forever
 the cache before concluding anything about coverage**, and don't trust a short row count.
 The probe now prints a warning instead of silently accepting it.
 
+**`soccerdata` also silently drops three shot enum values, and we repair them.** It converts
+Understat's CamelCase to spaced words with an incomplete mapping. Proven 2026-07-26 by counting
+its own raw cache against what landed in Postgres, for the same 380 matches:
+
+| Field | Upstream | Stored before the fix |
+|---|---|---|
+| `situation` | OpenPlay 6951 · FromCorner 1674 · SetPiece 559 · DirectFreekick 248 · **Penalty 92** | …and **NULL 92** |
+| `shotType` | RightFoot 4743 · LeftFoot 2957 · **Head 1778** · **OtherBodyPart 46** | …and **NULL 1824** |
+
+Every count matches exactly, so it drops precisely `Penalty`, `Head` and `OtherBodyPart` —
+**1 870 of 9 524 shots, 19.6%**, with a corrupted attribute. Not our bug: the ingest passes the
+value straight through, and `_clean('Penalty')` returns `'Penalty'`.
+
+It matters because unlabelled penalties contaminate **non-penalty xG**, the figure that actually
+predicts future scoring — a striker on four penalties looks like a better open-play finisher
+than he is. Penalty xG is 70.0 of 1 183.9 total, 5.9%. Unlabelled headers make set-piece threat
+unanalysable, and a tall defender who scores from corners is exactly the cheap differential this
+project exists to find.
+
+`sync/sources/understat_raw.py` repairs both from the untouched JSON `soccerdata` already cached
+during the same fetch, keyed by `shot_id`. Exact rather than inferred: the penalty label could
+be guessed from the coordinate — all 92 sit at exactly (0.885, 0.500) with mean xG 0.761 — but
+`Head` and `OtherBodyPart` cannot be separated once both are NaN. It only ever fills a gap and
+never overwrites, so it becomes a no-op if `soccerdata` fixes its mapping. `verify` fails if any
+`situation` or `body_part` goes NULL again.
+
 Understat is described across 2026 sources as one of the last free xG sources standing.
 Treat it as valuable but single-point-of-failure: cache raw responses on disk so a
 future outage doesn't erase history we already fetched.

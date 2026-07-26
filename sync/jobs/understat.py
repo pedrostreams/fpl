@@ -24,6 +24,7 @@ import pandas as pd
 
 from .. import config, db
 from ..fpl import FplClient, as_ts
+from ..sources import understat_raw
 from . import _resolve
 
 SOURCE = "understat"
@@ -228,6 +229,11 @@ def run(
                     if _clean(r.get("assist_player_id")) is not None else None
                 ),
             } for _, r in shots.iterrows()]
+
+            # soccerdata drops `Penalty`, `Head` and `OtherBodyPart` to NaN — 19.6% of shots
+            # carry a corrupted attribute. Refill them from the raw JSON it already cached.
+            # See sync/sources/understat_raw.py for the proof that the bug is upstream.
+            detail["shot_attribute_repair"] = understat_raw.repair(shot_rows)
 
             # Identity and diagnostics first, facts second. The 9 524-row shot upsert is
             # the most likely thing to fail, and when it did, unmatched-name logging sat

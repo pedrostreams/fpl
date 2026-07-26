@@ -619,19 +619,41 @@ export type CaptainPick = {
   opponentName: string | null
   isHome: boolean
   gameweek: number | null
-  pWin: number | null
   xgiPer90: number | null
-  fixtureEase: number | null
   minutesSecurity: number | null
-  captainScore: number | null
   penaltiesOrder: number | null
+  /** Poisson from the fixture model's lambda — what a captain actually depends on. */
+  pTeamScores: number | null
+  pTeamScores2Plus: number | null
+  bigChancesPer90: number | null
+  shotsInBoxPer90: number | null
+  nonPenaltyXgPer90: number | null
+  hasShotData: boolean
+  /** Two axes, not one: a safe armband and an explosive one are different questions. */
+  floorScore: number | null
+  ceilingScore: number | null
+  combinedScore: number | null
+  /** The component percentile ranks, so the ranking can be argued with. */
+  ranks: {
+    minutes: number | null
+    teamScores: number | null
+    involvement: number | null
+    bigChances: number | null
+    shotsInBox: number | null
+    teamScores2: number | null
+    npXg: number | null
+  }
 }
 
-export async function getCaptainPicks(limit = 8): Promise<CaptainPick[]> {
+export async function getCaptainPicks(limit = 10): Promise<CaptainPick[]> {
   const rows = await query<Record<string, unknown>>(
     `select player_code, web_name, position, team_short, price, selected_by_percent,
-            opponent_short, opponent_name, is_home, gameweek, p_win, xgi_per_90,
-            fixture_ease, minutes_security, captain_score, penalties_order
+            opponent_short, opponent_name, is_home, gameweek, xgi_per_90, minutes_security,
+            penalties_order, p_team_scores, p_team_scores_2plus,
+            big_chances_per_90, shots_in_box_per_90, non_penalty_xg_per_90, has_shot_data,
+            floor_score, ceiling_score, combined_score,
+            rank_minutes, rank_team_scores, rank_involvement, rank_big_chances,
+            rank_shots_in_box, rank_team_scores_2, rank_np_xg
      from captain_picks limit $1`,
     [limit],
   )
@@ -646,12 +668,27 @@ export async function getCaptainPicks(limit = 8): Promise<CaptainPick[]> {
     opponentName: (r.opponent_name as string) ?? null,
     isHome: Boolean(r.is_home),
     gameweek: num(r.gameweek),
-    pWin: num(r.p_win),
     xgiPer90: num(r.xgi_per_90),
-    fixtureEase: num(r.fixture_ease),
     minutesSecurity: num(r.minutes_security),
-    captainScore: num(r.captain_score),
     penaltiesOrder: num(r.penalties_order),
+    pTeamScores: num(r.p_team_scores),
+    pTeamScores2Plus: num(r.p_team_scores_2plus),
+    bigChancesPer90: num(r.big_chances_per_90),
+    shotsInBoxPer90: num(r.shots_in_box_per_90),
+    nonPenaltyXgPer90: num(r.non_penalty_xg_per_90),
+    hasShotData: Boolean(r.has_shot_data),
+    floorScore: num(r.floor_score),
+    ceilingScore: num(r.ceiling_score),
+    combinedScore: num(r.combined_score),
+    ranks: {
+      minutes: num(r.rank_minutes),
+      teamScores: num(r.rank_team_scores),
+      involvement: num(r.rank_involvement),
+      bigChances: num(r.rank_big_chances),
+      shotsInBox: num(r.rank_shots_in_box),
+      teamScores2: num(r.rank_team_scores_2),
+      npXg: num(r.rank_np_xg),
+    },
   }))
 }
 
