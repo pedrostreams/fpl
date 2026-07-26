@@ -270,6 +270,129 @@ def run(
                 order by source, season
             """)))
 
+        # ---- Derived views ----------------------------------------------------- #
+        # A view that returns confident nonsense is worse than one that errors, so these
+        # check the numbers are football-plausible rather than merely present.
+
+        ctx = db.fetch(conn, "select * from season_context")
+        if ctx:
+            print("\n=== season_context (drives which season every view reads) ===")
+            print(_fmt(ctx))
+
+        scout = db.fetch(conn, """
+            select count(*) as players,
+                   count(*) filter (where is_cold_start) as cold_start,
+                   count(*) filter (where has_reliable_sample) as reliable_sample,
+                   count(*) filter (where price is null) as missing_price,
+                   count(*) filter (where output_percentile is null) as missing_output
+            from player_scout
+        """)
+        if scout:
+            print("\n=== player_scout ===")
+            print(_fmt(scout))
+            s = scout[0]
+            if s["players"] == 0:
+                problems.append("player_scout is empty — the scout screen has nothing to read")
+            if s["missing_price"]:
+                problems.append(f"{s['missing_price']} player_scout rows have no price "
+                                f"(no snapshot yet for that player?)")
+
+            # Percentiles are a rank in [0,1] by construction. Anything outside means the
+            # window function or an inversion is wrong.
+            bad_pct = db.fetch(conn, """
+                select count(*) as n from player_scout
+                where (xgi_per_90_percentile is not null
+                       and (xgi_per_90_percentile < 0 or xgi_per_90_percentile > 1))
+                   or (output_percentile < 0 or output_percentile > 1)
+                   or (differential_percentile < 0 or differential_percentile > 1)
+            """)
+            if bad_pct[0]["n"]:
+                problems.append(f"{bad_pct[0]['n']} player_scout rows have a percentile "
+                                f"outside [0,1]")
+
+            # Goalkeepers score no defensive contribution, so it must not feed their output
+            # (migration 0006). If it does, their output no longer equals the xGC percentile.
+            gk = db.fetch(conn, """
+                select count(*) as n from player_scout
+                where element_type = 1 and has_reliable_sample
+                  and output_percentile <> coalesce(xgc_per_90_percentile, 0)
+            """)
+            if gk[0]["n"]:
+                problems.append(f"{gk[0]['n']} goalkeepers have output_percentile driven by "
+                                f"something other than xGC — DEFCON is leaking back in")
+
+        style = db.fetch(conn, """
+            select season, count(*) as teams,
+                   round(min(ppda), 2) as ppda_min, round(max(ppda), 2) as ppda_max,
+                   count(*) filter (where current_elo is null) as missing_elo
+            from team_style group by season order by season desc
+        """)
+        if style:
+            print("\n=== team_style ===")
+            print(_fmt(style))
+
+            # Fewer than 20 teams in a past season is correct, not a fault: promoted clubs
+            # have no prior Premier League data. 2025/26 holds 17 of the current 20 because
+            # Coventry, Hull and Ipswich came up. This is the team-level twin of the player
+            # cold-start problem, so report it as coverage rather than flagging it.
+            missing = db.fetch(conn, """
+                select t.name
+                from teams t
+                join team_seasons ts on ts.team_code = t.code
+                 and ts.season = (select current_season from season_context)
+                where not exists (
+                  select 1 from team_style s
+                  where s.team_code = t.code
+                    and s.season = (select stats_season from season_context))
+                order by t.name
+            """)
+            if missing:
+                print(f"\n    promoted / no prior-season style data "
+                      f"({len(missing)} of 20): "
+                      f"{', '.join(m['name'] for m in missing)}")
+                print("    -> team profiles need a cold-start path for these")
+
+            # Once the season is under way, every current team must be present.
+            started = ctx and ctx[0]["season_started"]
+            if started:
+                current_rows = next(
+                    (r for r in style if r["season"] == ctx[0]["stats_season"]), None)
+                if current_rows and current_rows["teams"] != 20:
+                    problems.append(
+                        f"team_style {current_rows['season']} has "
+                        f"{current_rows['teams']} teams mid-season, expected 20")
+
+        odds_view = db.fetch(conn, """
+            select season, count(*) as team_fixtures,
+                   round(min(p_clean_sheet), 3) as cs_min,
+                   round(max(p_clean_sheet), 3) as cs_max,
+                   round(avg(expected_goals_for), 3) as avg_xg_for
+            from fixture_odds group by season order by season desc
+        """)
+        if odds_view:
+            print("\n=== fixture_odds (Poisson clean-sheet model) ===")
+            print(_fmt(odds_view))
+            # A probability outside [0,1], or an implausible goal expectation, means the
+            # Poisson approximation has drifted.
+            bad_cs = db.fetch(conn, """
+                select count(*) as n from fixture_odds
+                where p_clean_sheet is not null
+                  and (p_clean_sheet <= 0 or p_clean_sheet >= 1
+                       or expected_goals_for < 0 or expected_goals_for > 6)
+            """)
+            if bad_cs[0]["n"]:
+                problems.append(f"{bad_cs[0]['n']} fixture_odds rows have an implausible "
+                                f"clean-sheet probability or expected goals")
+
+        gems = db.fetch(conn, """
+            select position, count(*) as n, round(avg(gem_score), 3) as avg_score,
+                   round(max(gem_score), 3) as best
+            from hidden_gems group by position order by position
+        """)
+        if gems:
+            print("\n=== hidden_gems by position ===")
+            print(_fmt(gems))
+
         print("\n=== storage (Supabase free tier = 500 MB) ===")
         print(_fmt(db.fetch(conn, """
             select relname as table,

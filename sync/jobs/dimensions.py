@@ -98,6 +98,14 @@ def build(bootstrap: dict, fixtures_payload: list[dict]) -> dict[str, list[dict]
             "start_cost": (now_cost - change_start) if now_cost is not None else None,
             "squad_number": as_int(e.get("squad_number")),
             "team_join_date": as_date(e.get("team_join_date")),
+            # Set-piece duty, published first-party by FPL. Free signal that paid tools
+            # charge for; 64 penalty takers and 71 corner takers are named as of 2026-07-26.
+            "penalties_order": as_int(e.get("penalties_order")),
+            "penalties_text": as_text(e.get("penalties_text")),
+            "direct_freekicks_order": as_int(e.get("direct_freekicks_order")),
+            "direct_freekicks_text": as_text(e.get("direct_freekicks_text")),
+            "corners_order": as_int(e.get("corners_and_indirect_freekicks_order")),
+            "corners_text": as_text(e.get("corners_and_indirect_freekicks_text")),
         })
 
         totals.append({
@@ -161,8 +169,22 @@ def build(bootstrap: dict, fixtures_payload: list[dict]) -> dict[str, list[dict]
         "stats": f.get("stats") or [],
     } for f in fixtures_payload]
 
+    # Squad-size rules come from the payload; `defcon_threshold` is ours and is set by
+    # migration 0003, so it is deliberately not written here — an upsert listing only these
+    # columns would leave it untouched.
+    element_type_rows = [{
+        "id": t["id"],
+        "singular_name": as_text(t.get("singular_name")),
+        "singular_name_short": as_text(t.get("singular_name_short")),
+        "plural_name": as_text(t.get("plural_name")),
+        "squad_select": as_int(t.get("squad_select")),
+        "squad_min_play": as_int(t.get("squad_min_play")),
+        "squad_max_play": as_int(t.get("squad_max_play")),
+    } for t in bootstrap.get("element_types", [])]
+
     return {
         "seasons": seasons,
+        "element_types": element_type_rows,
         "teams": teams,
         "team_seasons": team_seasons,
         "players": players,
@@ -176,6 +198,7 @@ def build(bootstrap: dict, fixtures_payload: list[dict]) -> dict[str, list[dict]
 # Insertion order matters: FKs point left to right.
 ORDER: list[tuple[str, tuple[str, ...]]] = [
     ("seasons", ("name",)),
+    ("element_types", ("id",)),
     ("teams", ("code",)),
     ("team_seasons", ("season", "team_code")),
     ("players", ("code",)),

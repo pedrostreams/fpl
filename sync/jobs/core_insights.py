@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from typing import Any
 
 from curl_cffi import requests as curl_requests
@@ -49,6 +50,31 @@ def season_path(season: str) -> str:
     """'2026-27' -> '2026-2027', the repository's folder naming."""
     start, end = season.split("-")
     return f"{start}-{start[:2]}{end}"
+
+
+# Longest-first so 'champions-league' wins before any shorter prefix could.
+TOURNAMENTS = (
+    "champions-league", "conference-league", "europa-league",
+    "efl-cup", "fa-cup", "prem",
+)
+
+
+def tournament_of(match_id: str) -> str:
+    """Extract the competition from a match id, e.g.
+    '25-26-champions-league-arsenal-vs-athletic-club' -> 'champions-league'.
+
+    This is not cosmetic. The `By Gameweek/GW{n}/` folders include cup and European
+    fixtures despite the naming — 519 distinct 2025/26 matches split into 379 `prem`, 64
+    Champions League, 37 EFL Cup and 26 Europa League — and 1 863 player-gameweek pairs
+    have more than one row. Aggregating without this label overstated Declan Rice's
+    minutes by 37% (4 246 vs FPL's 3 093), which would silently deflate every per-90.
+    """
+    # Strip the leading season prefix, e.g. '25-26-'.
+    body = re.sub(r"^\d{2}-\d{2}-", "", str(match_id or ""))
+    for slug in TOURNAMENTS:
+        if body.startswith(f"{slug}-"):
+            return slug
+    return "other"
 
 
 def _num(v: Any) -> float | None:
@@ -124,6 +150,7 @@ def build(
             "ci_player_id": fpl_id,
             "match_id": match_id,
             "event": event,
+            "tournament": tournament_of(match_id),
         }
         row.update({c: _int(r.get(c)) for c in PROMOTED_INT})
         row.update({c: _num(r.get(c)) for c in PROMOTED_NUM})
@@ -213,13 +240,25 @@ def run(
                 conn, "core_insights_player_match", all_rows,
                 ("season", "player_code", "match_id"))
 
+            by_tournament: dict[str, int] = {}
+            for r in all_rows:
+                by_tournament[r["tournament"]] = by_tournament.get(r["tournament"], 0) + 1
+
             detail.update({
                 "rows_written": written,
                 "id_map_source": map_source,
                 "known_players_in_season": len(code_by_fpl_id),
+                "rows_by_tournament": dict(sorted(by_tournament.items())),
                 "unmapped_element_ids": sorted(set(unknown))[:20],
                 "unmapped_count": len(set(unknown)),
             })
+            if by_tournament.get("other"):
+                # An unrecognised competition slug — TOURNAMENTS needs extending, and until
+                # it is, those rows would be counted as league minutes by any view that
+                # filters on 'prem' being absent.
+                detail["unlabelled_sample"] = [
+                    r["match_id"] for r in all_rows if r["tournament"] == "other"
+                ][:5]
             state["rows"] = written
             state["detail"] = detail
 

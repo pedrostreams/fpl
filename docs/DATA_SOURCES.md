@@ -172,8 +172,23 @@ a price model that wants expected-stat features.
 **104 of 558 players (19%) have no 2025/26 record at all**, all with zero minutes — new
 signings, promoted-club players, and academy prospects. A scouting tool that ranks on
 last-season xGI per 90 is blind to a fifth of the pool, which is exactly where hidden gems
-hide. The scout screen needs an explicit cold-start path (minutes trend once the season
-starts, plus Understat/Sofascore history from the player's previous league).
+hide. `player_scout.is_cold_start` flags them and gives them null percentiles rather than
+ranking them last on no evidence; `hidden_gems` excludes them outright, and the UI must
+surface them separately instead of pretending they scored badly.
+
+**`defensive_contribution` uses a position-dependent formula.** Verified against 2025/26:
+it counts clearances + blocks + interceptions + tackles for **defenders** (97 of 99 exact),
+and additionally counts **recoveries** for midfielders (125 of 128) and forwards (25 of 25).
+Goalkeepers earn none — `element_types.defcon_threshold` is null for them.
+
+So **never recompute it from its components with one formula**: summing
+CBI + tackles + recoveries for everyone overstates every defender by their entire recovery
+count. The thresholds for 2 points are 10 qualifying actions for defenders and 12 for
+midfielders and forwards, stored in `element_types.defcon_threshold`.
+
+**Set-piece taker order was in the API all along and initially went uningested.** 64 penalty
+takers, 60 direct free-kick takers and 71 corner takers are named first-party. Now stored on
+`player_seasons`; it is one of the clearest free edges in the whole feed.
 
 ### 3.1 Understat — the team-style and shot-location engine
 
@@ -281,6 +296,55 @@ unnecessary — and their free tiers (100 req/hour) would be a downgrade in cove
 ---
 
 ## 4. Tier 3 — Cross-check and backfill
+
+### olbauday/FPL-Core-Insights — read the caveats before using it
+
+Three things about this source turned out to be materially different from first impressions,
+all found on 2026-07-26 while building the derived views. Two of them would have silently
+corrupted every per-90 in the app.
+
+**1. The `By Gameweek/GW{n}/` folders are not Premier League only.** They include Champions
+League, Europa League and cup fixtures played in the same window. Of 519 distinct 2025/26
+matches: **379 `prem`, 64 Champions League, 37 EFL Cup, 26 Europa League**, and 1 863
+player-gameweek pairs have more than one match row. Unfiltered, Declan Rice showed **4 246
+minutes against FPL's 3 093** — a 37% overstatement that would have deflated every rate
+computed from it.
+
+The competition is encoded in `match_id`
+(`25-26-champions-league-arsenal-vs-athletic-club`), so `core_insights_player_match.tournament`
+now carries it. **Filter to `tournament = 'prem'` for anything FPL scores.** With that filter
+minutes reconcile against FPL for 93 of 98 defenders and 116 of 128 midfielders.
+
+Labelled, the non-league rows become an asset rather than a defect: minutes in other
+competitions are precisely the rotation-and-fatigue signal FPL's own data cannot provide.
+That's what `player_congestion` exposes.
+
+**2. Its `defensive_contributions` is wrong for defenders and goalkeepers.** With the
+`prem` filter applied it matches FPL exactly for midfielders (113 of 128) and forwards (23
+of 25), but not defenders (6 of 98, averaging +21.5) or goalkeepers (+84). It appears to
+apply the midfielder formula to everyone, so defenders gain their recovery count, which FPL
+excludes.
+
+Reconstructing FPL's figure from this source's components does not work either — tested
+`clearances + blocks + interceptions + tackles` (3 of 98 exact), with headed clearances
+added (1 of 98), and with tackles-won substituted (0 of 98). The underlying counting
+definitions differ.
+
+**Use FPL's `defensive_contribution` and nothing else.** Consequence for the product: true
+per-match DEFCON *hit rate* ("how often does this player clear the threshold") is not
+computable until GW1, when `player_gw_stats` supplies FPL's own per-match figure. Until then
+the scout shows DEFCON per 90, which is an honest proxy and labelled as one.
+
+**3. The physical data is ~1% populated, not a headline feature.** `distance_covered` and
+`top_speed` were recorded here as an advantage no other free source offers. Measured: for
+2025/26 only **144 of 12 242 rows** carry a non-zero distance and 281 a non-zero top speed,
+absent entirely from GW1–12 and scattered between GW6 and GW36.
+
+The zeros are also not zeros — a player on the pitch for 90 minutes did not run 0 km — so
+averaging them dragged every figure to `0.00`, which is how the gap was noticed at all.
+`player_congestion` now applies `nullif(..., 0)` and publishes
+`matches_with_physical` so the thin sample is visible. Worth re-checking in-season; if
+coverage improves this becomes genuinely useful.
 
 ### olbauday/FPL-Core-Insights
 GitHub CSV dataset, **auto-updated twice daily — verified commit `2026-07-26 08:18 UTC`**,
