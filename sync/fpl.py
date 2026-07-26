@@ -72,6 +72,27 @@ class FplClient:
     def entry_picks(self, entry_id: int, event: int) -> dict:
         return self._get(f"entry/{entry_id}/event/{event}/picks/")
 
+    def entry(self, entry_id: int) -> dict:
+        return self._get(f"entry/{entry_id}/", f"entry-{entry_id}")
+
+    def entry_history(self, entry_id: int) -> dict:
+        return self._get(f"entry/{entry_id}/history/", f"entry-{entry_id}-history")
+
+    def entry_picks_optional(self, entry_id: int, event: int) -> dict | None:
+        """The squad, or None if FPL has not published it.
+
+        A 404 here is the expected state before the first deadline — verified 2026-07-26,
+        entry 1617827 returns `{"detail":"Not found."}` for GW1 — so it must not raise. Every
+        other status still does, because "the endpoint changed shape" and "the squad isn't
+        picked yet" need to look different to the caller.
+        """
+        resp = self.session.get(
+            f"{BASE}/entry/{entry_id}/event/{event}/picks/", timeout=self.timeout)
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.json()
+
 
 # --------------------------------------------------------------------------- #
 # Coercion

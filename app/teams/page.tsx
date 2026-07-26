@@ -42,8 +42,8 @@ export default async function TeamsPage() {
           </h1>
           <p className="mt-1 max-w-3xl text-[13px]" style={{ color: 'var(--muted)' }}>
             Continuous difficulty from ClubElo ratings, with the model&apos;s constants{' '}
-            <strong>fitted against last season&apos;s betting market</strong> rather than
-            chosen by hand — home advantage, the draw curve and the scoring rates all come
+            <strong>fitted against last season&apos;s betting market</strong>{' '}
+            rather than chosen by hand — home advantage, the draw curve and the scoring rates all come
             out of 272 matches where we hold both the de-vigged odds and each side&apos;s
             Elo on the day. It reproduces the market&apos;s ordering at a Spearman of
             0.92.

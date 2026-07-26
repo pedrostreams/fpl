@@ -32,10 +32,15 @@ function createPool(): Pool {
     // Supabase terminates TLS at the pooler with a certificate chain Node won't verify by
     // default. The connection is still encrypted; only chain verification is relaxed.
     ssl: isLocal ? undefined : { rejectUnauthorized: false },
-    // The pooler is shared with the sync jobs, so stay modest.
-    max: 4,
+    // The pooler is shared with the sync jobs and with every other build worker or serverless
+    // instance, so stay modest. The dashboard alone fires 11 queries concurrently; they queue
+    // on these 3 connections, which costs a few hundred milliseconds and is far cheaper than
+    // exhausting the pooler.
+    max: 3,
     idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 10_000,
+    // Generous on purpose. This is the wait for a free connection, not for a query, and under
+    // contention 10s was short enough to fail a production build outright.
+    connectionTimeoutMillis: 30_000,
   })
 }
 

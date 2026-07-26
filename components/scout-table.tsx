@@ -10,6 +10,8 @@ import {
   useReactTable,
 } from '@tanstack/react-table'
 import { useMemo, useState } from 'react'
+import { PlayerPhoto } from '@/components/player-photo'
+import { WatchButton } from '@/components/watch-button'
 import type { ScoutRow } from '@/lib/queries'
 import {
   POSITION_VAR,
@@ -101,11 +103,17 @@ export function ScoutTable({
   rows,
   statsSeason,
   seasonStarted,
+  watchedCodes,
 }: {
   rows: ScoutRow[]
   statsSeason: string | null
   seasonStarted: boolean
+  watchedCodes: number[]
 }) {
+  // A Set, not `.includes()`: this is checked once per rendered row across 558 rows on every
+  // filter change, and an array scan would make it quadratic.
+  const watched = useMemo(() => new Set(watchedCodes), [watchedCodes])
+  const [watchedOnly, setWatchedOnly] = useState(false)
   // Price bounds come from the data, never a literal. A hardcoded 15.0 default silently
   // excluded Haaland at £15.5 — the single most-owned player in the game missing from a scout
   // screen that reported "557 of 558 players" and looked entirely healthy. FPL's ceiling moves
@@ -147,11 +155,12 @@ export function ScoutTable({
       if ((r.selectedByPercent ?? 0) > maxOwnership) return false
       if (availableOnly && !r.isAvailable) return false
       if (hideColdStart && r.isColdStart) return false
+      if (watchedOnly && !watched.has(r.playerCode)) return false
       return true
     })
   }, [
     rows, search, positions, team, maxPrice, minMinutes, maxOwnership,
-    availableOnly, hideColdStart,
+    availableOnly, hideColdStart, watchedOnly, watched,
   ])
 
   const columns = useMemo<ColumnDef<ScoutRow>[]>(
@@ -164,10 +173,12 @@ export function ScoutTable({
           const r = row.original
           return (
             <div className="flex items-center gap-2 px-3 py-1.5">
-              <span
-                className="w-1 self-stretch rounded-full"
-                style={{ background: POSITION_VAR[r.position] }}
-                aria-hidden
+              <WatchButton playerCode={r.playerCode} watched={watched.has(r.playerCode)} />
+              <PlayerPhoto
+                playerCode={r.playerCode}
+                name={r.webName}
+                size={24}
+                accent={POSITION_VAR[r.position]}
               />
               <span
                 className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
@@ -285,7 +296,7 @@ export function ScoutTable({
         },
       },
     ],
-    [],
+    [watched],
   )
 
   const table = useReactTable({
@@ -362,6 +373,11 @@ export function ScoutTable({
 
         <Toggle label="Available only" on={availableOnly} onChange={setAvailableOnly} />
         <Toggle label="Hide new" on={hideColdStart} onChange={setHideColdStart} />
+        <Toggle
+          label={`Watchlist${watched.size ? ` · ${watched.size}` : ''}`}
+          on={watchedOnly}
+          onChange={setWatchedOnly}
+        />
       </div>
 
       <div className="flex items-center justify-between text-[12px]" style={{ color: 'var(--muted)' }}>

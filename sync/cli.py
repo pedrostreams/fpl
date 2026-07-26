@@ -19,7 +19,7 @@ from typing import Any
 from . import config
 from .fpl import FplClient
 from .jobs import (
-    clubelo, core_insights, dimensions, history, odds, snapshot, understat, verify,
+    clubelo, core_insights, dimensions, history, manager, odds, snapshot, understat, verify,
 )
 
 JOBS = {
@@ -30,6 +30,7 @@ JOBS = {
     "core_insights": core_insights.run,
     "clubelo": clubelo.run,
     "odds": odds.run,
+    "manager": manager.run,
     "verify": verify.run,
 }
 

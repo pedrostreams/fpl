@@ -534,6 +534,343 @@ export async function getMovement(): Promise<MovementRow[]> {
   }))
 }
 
+// --------------------------------------------------------------------------- //
+// The dashboard
+// --------------------------------------------------------------------------- //
+
+/** Just the codes, for the scout table's hearts. A Set keeps the row render O(1). */
+export async function getWatchlistCodes(): Promise<number[]> {
+  const rows = await query<{ player_code: number }>(
+    'select player_code from watchlist order by added_at desc',
+  )
+  return rows.map((r) => Number(r.player_code))
+}
+
+export type WatchRow = {
+  playerCode: number
+  webName: string
+  position: string
+  teamShort: string | null
+  price: number | null
+  selectedByPercent: number | null
+  status: string | null
+  news: string | null
+  isAvailable: boolean
+  totalPoints: number | null
+  xgiPer90: number | null
+  pointsPerMillion: number | null
+  outputPercentile: number | null
+  isColdStart: boolean
+  note: string | null
+  netTransfersEvent: number | null
+  ownershipDelta24h: number | null
+  has24hHistory: boolean
+  /** Next fixture, so "bring them in this week?" is answerable without leaving the page. */
+  opponentShort: string | null
+  isHome: boolean | null
+  nextDifficulty: number | null
+  nextPCleanSheet: number | null
+}
+
+export async function getWatchlist(): Promise<WatchRow[]> {
+  const rows = await query<Record<string, unknown>>(`
+    select player_code, web_name, position, team_short, price, selected_by_percent,
+           status, news, is_available, total_points, xgi_per_90, points_per_million,
+           output_percentile, is_cold_start, note,
+           net_transfers_event, ownership_delta_24h, has_24h_history,
+           opponent_short, is_home, next_difficulty, next_p_clean_sheet
+    from watchlist_detail
+    order by added_at desc
+  `)
+  return rows.map((r) => ({
+    playerCode: Number(r.player_code),
+    webName: String(r.web_name ?? ''),
+    position: String(r.position ?? ''),
+    teamShort: (r.team_short as string) ?? null,
+    price: num(r.price),
+    selectedByPercent: num(r.selected_by_percent),
+    status: (r.status as string) ?? null,
+    news: (r.news as string) ?? null,
+    isAvailable: Boolean(r.is_available),
+    totalPoints: num(r.total_points),
+    xgiPer90: num(r.xgi_per_90),
+    pointsPerMillion: num(r.points_per_million),
+    outputPercentile: num(r.output_percentile),
+    isColdStart: Boolean(r.is_cold_start),
+    note: (r.note as string) ?? null,
+    netTransfersEvent: num(r.net_transfers_event),
+    ownershipDelta24h: num(r.ownership_delta_24h),
+    has24hHistory: Boolean(r.has_24h_history),
+    opponentShort: (r.opponent_short as string) ?? null,
+    isHome: r.is_home === null || r.is_home === undefined ? null : Boolean(r.is_home),
+    nextDifficulty: num(r.next_difficulty),
+    nextPCleanSheet: num(r.next_p_clean_sheet),
+  }))
+}
+
+export type CaptainPick = {
+  playerCode: number
+  webName: string
+  position: string
+  teamShort: string | null
+  price: number | null
+  selectedByPercent: number | null
+  opponentShort: string | null
+  opponentName: string | null
+  isHome: boolean
+  gameweek: number | null
+  pWin: number | null
+  xgiPer90: number | null
+  fixtureEase: number | null
+  minutesSecurity: number | null
+  captainScore: number | null
+  penaltiesOrder: number | null
+}
+
+export async function getCaptainPicks(limit = 8): Promise<CaptainPick[]> {
+  const rows = await query<Record<string, unknown>>(
+    `select player_code, web_name, position, team_short, price, selected_by_percent,
+            opponent_short, opponent_name, is_home, gameweek, p_win, xgi_per_90,
+            fixture_ease, minutes_security, captain_score, penalties_order
+     from captain_picks limit $1`,
+    [limit],
+  )
+  return rows.map((r) => ({
+    playerCode: Number(r.player_code),
+    webName: String(r.web_name ?? ''),
+    position: String(r.position ?? ''),
+    teamShort: (r.team_short as string) ?? null,
+    price: num(r.price),
+    selectedByPercent: num(r.selected_by_percent),
+    opponentShort: (r.opponent_short as string) ?? null,
+    opponentName: (r.opponent_name as string) ?? null,
+    isHome: Boolean(r.is_home),
+    gameweek: num(r.gameweek),
+    pWin: num(r.p_win),
+    xgiPer90: num(r.xgi_per_90),
+    fixtureEase: num(r.fixture_ease),
+    minutesSecurity: num(r.minutes_security),
+    captainScore: num(r.captain_score),
+    penaltiesOrder: num(r.penalties_order),
+  }))
+}
+
+export type Manager = {
+  entryId: number
+  name: string | null
+  playerName: string | null
+  favouriteTeam: string | null
+  startedEvent: number | null
+  currentEvent: number | null
+  overallPoints: number | null
+  overallRank: number | null
+  seasons: { seasonName: string; totalPoints: number | null; rank: number | null }[]
+}
+
+export async function getManager(): Promise<Manager | null> {
+  const rows = await query<Record<string, unknown>>(`
+    select m.entry_id, m.name, m.player_name, m.started_event, m.current_event,
+           m.overall_points, m.overall_rank, t.name as favourite_team
+    from managers m
+    left join teams t on t.code = m.favourite_team
+    order by m.entry_id limit 1
+  `)
+  if (!rows.length) return null
+  const m = rows[0]
+  const seasons = await query<Record<string, unknown>>(
+    `select season_name, total_points, rank from manager_seasons
+     where entry_id = $1 order by season_name desc`,
+    [Number(m.entry_id)],
+  )
+  return {
+    entryId: Number(m.entry_id),
+    name: (m.name as string) ?? null,
+    playerName: (m.player_name as string) ?? null,
+    favouriteTeam: (m.favourite_team as string) ?? null,
+    startedEvent: num(m.started_event),
+    currentEvent: num(m.current_event),
+    overallPoints: num(m.overall_points),
+    overallRank: num(m.overall_rank),
+    seasons: seasons.map((s) => ({
+      seasonName: String(s.season_name),
+      totalPoints: num(s.total_points),
+      rank: num(s.rank),
+    })),
+  }
+}
+
+export type NextMatch = {
+  gameweek: number | null
+  kickoff: string | null
+  homeShort: string
+  awayShort: string
+  homeName: string
+  awayName: string
+  pHome: number | null
+  pDraw: number | null
+  pAway: number | null
+  expectedGoals: number | null
+}
+
+/** One row per match, not per team — `fixture_difficulty` holds both sides, so take the home. */
+export async function getNextMatches(limit = 10): Promise<NextMatch[]> {
+  const rows = await query<Record<string, unknown>>(
+    `select fd.gameweek, fd.kickoff_time,
+            h.short_name as home_short, h.name as home_name,
+            a.short_name as away_short, a.name as away_name,
+            fd.p_win as p_home, fd.p_draw, fd.p_lose as p_away,
+            (fd.expected_goals_for + fd.expected_goals_against) as expected_goals
+     from fixture_difficulty fd
+     join teams h on h.code = fd.team_code
+     join teams a on a.code = fd.opponent_code
+     where fd.is_home
+       and fd.gameweek = (select gameweek from next_gameweek)
+       and not coalesce(fd.finished, false)
+     order by fd.kickoff_time, h.name
+     limit $1`,
+    [limit],
+  )
+  return rows.map((r) => ({
+    gameweek: num(r.gameweek),
+    kickoff: r.kickoff_time ? new Date(r.kickoff_time as string).toISOString() : null,
+    homeShort: String(r.home_short ?? ''),
+    awayShort: String(r.away_short ?? ''),
+    homeName: String(r.home_name ?? ''),
+    awayName: String(r.away_name ?? ''),
+    pHome: num(r.p_home),
+    pDraw: num(r.p_draw),
+    pAway: num(r.p_away),
+    expectedGoals: num(r.expected_goals),
+  }))
+}
+
+export type TeamTarget = {
+  teamCode: number
+  name: string
+  shortName: string
+  fixtures: number
+  firstGameweek: number | null
+  lastGameweek: number | null
+  homeFixtures: number | null
+  avgDifficulty: number | null
+  avgAttackDifficulty: number | null
+  avgDefenceDifficulty: number | null
+  pWinPerFixture: number | null
+  xgForPerFixture: number | null
+  pCleanSheetPerFixture: number | null
+  elo: number | null
+  /** The run itself, so the dashboard can show who they actually play. */
+  opponents: { opponentShort: string; isHome: boolean; difficulty: number | null }[]
+}
+
+/**
+ * Best runs over the ticker's six-gameweek horizon.
+ *
+ * Ordered by the per-fixture rate, never the total — mid-gameweek the windows differ in size
+ * and the totals reward simply having more fixtures left. Same reasoning as migration 0008.
+ */
+export async function getTeamTargets(
+  lens: 'overall' | 'attack' | 'defence' = 'overall',
+  limit = 6,
+): Promise<TeamTarget[]> {
+  const column = {
+    overall: 'fr.avg_difficulty',
+    attack: 'fr.avg_attack_difficulty',
+    defence: 'fr.avg_defence_difficulty',
+  }[lens]
+
+  const rows = await query<Record<string, unknown>>(
+    `select t.code, t.name, t.short_name, fr.fixtures, fr.first_gameweek, fr.last_gameweek,
+            fr.home_fixtures, fr.avg_difficulty, fr.avg_attack_difficulty,
+            fr.avg_defence_difficulty, fr.p_win_per_fixture, fr.xg_for_per_fixture,
+            fr.p_clean_sheet_per_fixture, e.elo,
+            (select json_agg(json_build_object(
+                      'opponentShort', o.short_name,
+                      'isHome', fd.is_home,
+                      'difficulty', fd.difficulty) order by fd.gameweek, fd.kickoff_time)
+               from fixture_difficulty fd
+               join teams o on o.code = fd.opponent_code
+              where fd.team_code = t.code
+                and fd.gameweek between fr.first_gameweek and fr.last_gameweek
+                and not coalesce(fd.finished, false)) as opponents
+     from fixture_run fr
+     join teams t on t.code = fr.team_code
+     left join elo_now e on e.team_code = t.code
+     order by ${column} asc nulls last
+     limit $1`,
+    [limit],
+  )
+  return rows.map((r) => ({
+    teamCode: Number(r.code),
+    name: String(r.name ?? ''),
+    shortName: String(r.short_name ?? ''),
+    fixtures: Number(r.fixtures ?? 0),
+    firstGameweek: num(r.first_gameweek),
+    lastGameweek: num(r.last_gameweek),
+    homeFixtures: num(r.home_fixtures),
+    avgDifficulty: num(r.avg_difficulty),
+    avgAttackDifficulty: num(r.avg_attack_difficulty),
+    avgDefenceDifficulty: num(r.avg_defence_difficulty),
+    pWinPerFixture: num(r.p_win_per_fixture),
+    xgForPerFixture: num(r.xg_for_per_fixture),
+    pCleanSheetPerFixture: num(r.p_clean_sheet_per_fixture),
+    elo: num(r.elo),
+    opponents: ((r.opponents as unknown[]) ?? []).map((o) => {
+      const x = o as Record<string, unknown>
+      return {
+        opponentShort: String(x.opponentShort ?? ''),
+        isHome: Boolean(x.isHome),
+        difficulty: num(x.difficulty),
+      }
+    }),
+  }))
+}
+
+export type FormPlayer = {
+  playerCode: number
+  webName: string
+  position: string
+  teamShort: string | null
+  price: number | null
+  selectedByPercent: number | null
+  totalPoints: number | null
+  pointsPer90: number | null
+  xgiPer90: number | null
+  goalsMinusXg: number | null
+  outputPercentile: number | null
+  formValue: number | null
+  /** Shown beside the rate: a per-90 without its sample size is not checkable. */
+  minutes: number | null
+  /** 'form' once FPL's 30-day average is live, 'last_season_rate' before that. */
+  basis: string
+}
+
+export async function getFormPlayers(limit = 8): Promise<FormPlayer[]> {
+  const rows = await query<Record<string, unknown>>(
+    `select player_code, web_name, position, team_short, price, selected_by_percent,
+            total_points, points_per_90, xgi_per_90, goals_minus_xg, output_percentile,
+            minutes, form_value, basis
+     from form_players limit $1`,
+    [limit],
+  )
+  return rows.map((r) => ({
+    playerCode: Number(r.player_code),
+    webName: String(r.web_name ?? ''),
+    position: String(r.position ?? ''),
+    teamShort: (r.team_short as string) ?? null,
+    price: num(r.price),
+    selectedByPercent: num(r.selected_by_percent),
+    totalPoints: num(r.total_points),
+    pointsPer90: num(r.points_per_90),
+    xgiPer90: num(r.xgi_per_90),
+    goalsMinusXg: num(r.goals_minus_xg),
+    outputPercentile: num(r.output_percentile),
+    formValue: num(r.form_value),
+    minutes: num(r.minutes),
+    basis: String(r.basis ?? ''),
+  }))
+}
+
 export type SyncHealth = {
   job: string
   lastOk: string | null

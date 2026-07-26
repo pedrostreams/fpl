@@ -1,16 +1,17 @@
 import { ScoutTable } from '@/components/scout-table'
 import { relativeAge } from '@/lib/format'
-import { getScoutRows, getSeasonContext, getSyncHealth } from '@/lib/queries'
+import { getScoutRows, getSeasonContext, getSyncHealth, getWatchlistCodes } from '@/lib/queries'
 
 // The sync writes hourly at most, so a 5-minute page cache costs nothing in freshness and
 // spares the pooler a full 558-row read per visit.
 export const revalidate = 300
 
 export default async function ScoutPage() {
-  const [rows, ctx, health] = await Promise.all([
+  const [rows, ctx, health, watchedCodes] = await Promise.all([
     getScoutRows(),
     getSeasonContext(),
     getSyncHealth(),
+    getWatchlistCodes(),
   ])
 
   const stale = health.filter((h) => h.ageSeconds === null || h.ageSeconds > 60 * 60 * 36)
@@ -66,6 +67,7 @@ export default async function ScoutPage() {
         rows={rows}
         statsSeason={ctx.statsSeason}
         seasonStarted={ctx.seasonStarted}
+        watchedCodes={watchedCodes}
       />
     </div>
   )

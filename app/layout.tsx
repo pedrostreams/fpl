@@ -9,6 +9,7 @@ export const metadata: Metadata = {
 }
 
 const NAV = [
+  { href: '/', label: 'Dashboard' },
   { href: '/scout', label: 'Scout' },
   { href: '/gems', label: 'Hidden gems' },
   { href: '/teams', label: 'Teams' },
@@ -24,7 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           style={{ background: 'color-mix(in oklab, var(--bg) 88%, transparent)' }}
         >
           <div className="mx-auto flex h-14 max-w-[1800px] items-center gap-6 px-4">
-            <Link href="/scout" className="flex items-center gap-2">
+            <Link href="/" className="flex items-center gap-2">
               <Logo />
               <span className="text-[15px] font-semibold tracking-tight">FPL Scout</span>
               <span
