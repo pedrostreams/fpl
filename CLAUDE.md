@@ -119,6 +119,39 @@ letting a unique constraint drop one silently.
   `.get()` because `history` is empty in preseason; its exact shape can only be confirmed
   after GW1.
 
+## Web app
+
+Next.js 16 + React 19 + Tailwind 4, App Router. `npm run dev` (add `PORT=3210` — port 3000
+is usually taken by one of the sibling projects), `npm run build`, `npm run typecheck`.
+
+- **No Supabase JS client.** Server components read Postgres directly via `pg`
+  (`lib/db.ts`). There is no auth and no client-side write, so a direct server connection is
+  simpler and safer than an anon key plus RLS policies that would only ever say "everyone
+  may read all of this public football data". The connection string never reaches the browser.
+- **The pool must be a `globalThis` singleton.** Next re-evaluates modules on every edit in
+  dev; without it each hot reload leaks a fresh set of connections and exhausts the pooler.
+- **`numeric` arrives as a string** from node-postgres, because it can hold values outside
+  IEEE 754. Everything goes through `num()` in `lib/db.ts` — sorting the raw strings would
+  put 9 after 10.
+- **No metric is computed in TypeScript.** `lib/queries.ts` only maps columns. If a number
+  needs deriving it belongs in a SQL view, where `python -m sync.cli verify` can check it
+  instead of it being verifiable only by eye.
+- **`typedRoutes: true`** means a `<Link>` to a route that doesn't exist is a build error.
+  That is deliberate — it caught the nav pointing at unbuilt pages.
+- Pages use segment `revalidate = 300`. Cache Components (`cacheComponents: true`) are opt-in
+  in Next 16 and not enabled; the sync writes hourly at most, so five minutes costs nothing.
+
+Design language lives in `app/globals.css` as CSS variables, dark-first with a full light
+theme. The **heatmap mixes colour in CSS**, not JS: the percentile is passed as a `--p`
+custom property and `.heat` does a `color-mix` between two theme variables, so switching
+theme needs no re-render. A null percentile gets `.heat-null` hatching — "not ranked" must
+not look like "ranked low". All colours are oklch because the heatmap interpolates across the
+full 0–1 range and sRGB midtones go muddy.
+
+Payload note: `/scout` ships all 558 rows so filtering and sorting are instant with no
+round-trip. That is 2.4 MB of HTML but **109 KB compressed** (measured, not assumed) — the
+markup is highly repetitive. Don't "optimise" it without measuring the compressed size first.
+
 ## Data sources — read before adding a stat
 
 `docs/DATA_SOURCES.md` is the single source of truth, and **any change to a source, stat,

@@ -117,4 +117,13 @@ from 2022/23 onward, and 19% of the player pool has no 2025/26 record.
 [CLAUDE.md](CLAUDE.md) — the name-matching rules, which exist because the first run stored
 ten false positives.
 
-Phase 3 (derived views) is next — see [docs/PLAN.md](docs/PLAN.md).
+**Web app** (Next.js 16, `npm run dev -- -p 3210`):
+
+| Route | What it shows |
+|---|---|
+| `/scout` | All 558 players, per-90 rates with percentile heatmaps, sortable and filterable client-side |
+| `/gems` | Hidden gems ranked on output × ownership scarcity × value, each score showing its components |
+| `/teams` | Style and performance per team — PPDA press axis, xG/xGA, clean sheets, Elo |
+
+Remaining before GW1: odds-based fixture ticker, price watch (blocked on data until the GW1
+deadline), and deploy. See [docs/PLAN.md](docs/PLAN.md).

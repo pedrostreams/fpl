@@ -1,0 +1,148 @@
+@import 'tailwindcss';
+
+/*
+  Dark-first, because a percentile heatmap reads better against a dark surface and this is a
+  tool you use late deciding a transfer. Light mode is a full alternative, not an
+  afterthought: every token below has both values, so nothing hardcodes a colour.
+
+  All colours are oklch. It interpolates perceptually, which matters because the heatmap is
+  a continuous colour-mix across the whole 0-1 percentile range — in sRGB the midtones go
+  muddy.
+*/
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
+}
+
+:root {
+  --bg: oklch(0.155 0.012 255);
+  --surface: oklch(0.195 0.014 255);
+  --surface-2: oklch(0.235 0.015 255);
+  --border: oklch(0.29 0.014 255);
+  --text: oklch(0.95 0.005 255);
+  --muted: oklch(0.66 0.014 255);
+  --faint: oklch(0.48 0.012 255);
+  --accent: oklch(0.74 0.15 165);
+
+  /* Heatmap ramp. heat-hi stays mid-dark so --text keeps contrast at the top of the scale. */
+  --heat-lo: oklch(0.225 0.008 255);
+  --heat-hi: oklch(0.52 0.155 163);
+
+  --pos-gkp: oklch(0.74 0.14 78);
+  --pos-def: oklch(0.71 0.13 243);
+  --pos-mid: oklch(0.74 0.14 155);
+  --pos-fwd: oklch(0.71 0.16 22);
+
+  --warn: oklch(0.75 0.15 70);
+  --danger: oklch(0.66 0.19 22);
+  --ok: oklch(0.74 0.15 155);
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --bg: oklch(0.995 0.002 255);
+    --surface: oklch(0.975 0.004 255);
+    --surface-2: oklch(0.955 0.005 255);
+    --border: oklch(0.895 0.006 255);
+    --text: oklch(0.22 0.012 255);
+    --muted: oklch(0.48 0.014 255);
+    --faint: oklch(0.62 0.012 255);
+    --accent: oklch(0.55 0.14 165);
+
+    --heat-lo: oklch(0.985 0.003 255);
+    --heat-hi: oklch(0.80 0.145 163);
+
+    --pos-gkp: oklch(0.58 0.14 78);
+    --pos-def: oklch(0.52 0.15 243);
+    --pos-mid: oklch(0.52 0.13 155);
+    --pos-fwd: oklch(0.55 0.18 22);
+
+    --warn: oklch(0.58 0.15 70);
+    --danger: oklch(0.52 0.20 22);
+    --ok: oklch(0.52 0.14 155);
+
+    color-scheme: light;
+  }
+}
+
+:root[data-theme='light'] {
+  --bg: oklch(0.995 0.002 255);
+  --surface: oklch(0.975 0.004 255);
+  --surface-2: oklch(0.955 0.005 255);
+  --border: oklch(0.895 0.006 255);
+  --text: oklch(0.22 0.012 255);
+  --muted: oklch(0.48 0.014 255);
+  --faint: oklch(0.62 0.012 255);
+  --accent: oklch(0.55 0.14 165);
+  --heat-lo: oklch(0.985 0.003 255);
+  --heat-hi: oklch(0.80 0.145 163);
+  --pos-gkp: oklch(0.58 0.14 78);
+  --pos-def: oklch(0.52 0.15 243);
+  --pos-mid: oklch(0.52 0.13 155);
+  --pos-fwd: oklch(0.55 0.18 22);
+  --warn: oklch(0.58 0.15 70);
+  --danger: oklch(0.52 0.20 22);
+  --ok: oklch(0.52 0.14 155);
+  color-scheme: light;
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  /* Every column in the scout table is numeric and gets compared vertically; proportional
+     digits make that scan impossible. */
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+  Heatmap cell. The percentile arrives as a `--p` custom property on the element and the
+  colour is mixed in CSS rather than computed in JS, so light and dark themes are handled by
+  swapping two variables instead of re-rendering.
+*/
+.heat {
+  background: color-mix(in oklab, var(--heat-hi) calc(var(--p, 0) * 100%), var(--heat-lo));
+}
+
+/* No percentile — an unranked sample. Visibly absent rather than rendered as "low". */
+.heat-null {
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    color-mix(in oklab, var(--border) 55%, transparent) 4px,
+    color-mix(in oklab, var(--border) 55%, transparent) 5px
+  );
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  letter-spacing: -0.01em;
+}
+
+/* Thin, unobtrusive scrollbars — the table scrolls in both axes constantly. */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.scroll-thin::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 6px;
+  border: 2px solid var(--bg);
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
