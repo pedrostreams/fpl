@@ -105,6 +105,236 @@ export async function getSavedViews(): Promise<SavedView[]> {
   }))
 }
 
+// ---------------------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------------------
+
+export type SearchEntry = {
+  kind: 'player' | 'team'
+  code: number
+  label: string
+  sublabel: string | null
+  position: string | null
+  teamShort: string | null
+  haystack: string
+  weight: number
+}
+
+/**
+ * Players and clubs in one list, shipped to the header once.
+ *
+ * 578 rows, so matching happens in the browser and search is instant everywhere with no
+ * round-trip per keystroke. The haystack is lower-cased in SQL rather than per keystroke here.
+ */
+export async function getSearchIndex(): Promise<SearchEntry[]> {
+  const rows = await query<Record<string, unknown>>(
+    'select kind, code, label, sublabel, position, team_short, haystack, weight from search_index',
+  )
+  return rows.map((r) => ({
+    kind: r.kind as 'player' | 'team',
+    code: Number(r.code),
+    label: String(r.label ?? ''),
+    sublabel: (r.sublabel as string) ?? null,
+    position: (r.position as string) ?? null,
+    teamShort: (r.team_short as string) ?? null,
+    haystack: String(r.haystack ?? ''),
+    weight: Number(r.weight ?? 0),
+  }))
+}
+
+// ---------------------------------------------------------------------------------------
+// Player profile
+// ---------------------------------------------------------------------------------------
+
+/** One player's `player_wide` row, keyed by code. Null when the code is unknown. */
+export async function getPlayerRow(code: number): Promise<Record<string, unknown> | null> {
+  const rows = await query<Record<string, unknown>>(
+    'select * from player_wide where player_code = $1',
+    [code],
+  )
+  if (!rows.length) return null
+  // Coerce every numeric-looking string once, the same reason getPlayerWide does.
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(rows[0])) {
+    out[k] = typeof v === 'string' && v !== '' && Number.isFinite(Number(v)) ? Number(v) : v
+  }
+  return out
+}
+
+export type Shot = {
+  x: number
+  y: number
+  xg: number | null
+  isGoal: boolean
+  bodyPart: string | null
+  situation: string | null
+  result: string | null
+  zone: string | null
+  distanceM: number | null
+  minute: number | null
+}
+
+export async function getPlayerShots(code: number): Promise<Shot[]> {
+  const rows = await query<Record<string, unknown>>(
+    `select location_x, location_y, xg, is_goal, body_part, situation, result, zone,
+            distance_m, minute
+     from player_shots where player_code = $1 order by kickoff, minute`,
+    [code],
+  )
+  return rows.map((r) => ({
+    x: num(r.location_x) ?? 0,
+    y: num(r.location_y) ?? 0.5,
+    xg: num(r.xg),
+    isGoal: Boolean(r.is_goal),
+    bodyPart: (r.body_part as string) ?? null,
+    situation: (r.situation as string) ?? null,
+    result: (r.result as string) ?? null,
+    zone: (r.zone as string) ?? null,
+    distanceM: num(r.distance_m),
+    minute: num(r.minute),
+  }))
+}
+
+export type CareerSeason = {
+  season: string
+  minutes: number | null
+  totalPoints: number | null
+  goals: number | null
+  assists: number | null
+  cleanSheets: number | null
+  bonus: number | null
+  expectedGoals: number | null
+  expectedAssists: number | null
+  pointsPer90: number | null
+  isCurrentSeason: boolean
+}
+
+export async function getPlayerCareer(code: number): Promise<CareerSeason[]> {
+  const rows = await query<Record<string, unknown>>(
+    `select season, minutes, total_points, goals_scored, assists, clean_sheets, bonus,
+            expected_goals, expected_assists, points_per_90, is_current_season
+     from player_career where player_code = $1 order by season desc`,
+    [code],
+  )
+  return rows.map((r) => ({
+    season: String(r.season ?? ''),
+    minutes: num(r.minutes),
+    totalPoints: num(r.total_points),
+    goals: num(r.goals_scored),
+    assists: num(r.assists),
+    cleanSheets: num(r.clean_sheets),
+    bonus: num(r.bonus),
+    expectedGoals: num(r.expected_goals),
+    expectedAssists: num(r.expected_assists),
+    pointsPer90: num(r.points_per_90),
+    isCurrentSeason: Boolean(r.is_current_season),
+  }))
+}
+
+export type UpcomingFixture = {
+  gameweek: number | null
+  kickoff: string | null
+  isHome: boolean
+  opponentShort: string | null
+  opponentName: string | null
+  difficulty: number | null
+  positionDifficulty: number | null
+  pWin: number | null
+  expectedGoalsFor: number | null
+  pCleanSheet: number | null
+}
+
+export async function getPlayerFixtures(code: number, limit = 6): Promise<UpcomingFixture[]> {
+  const rows = await query<Record<string, unknown>>(
+    `select gameweek, kickoff_time, is_home, opponent_short, opponent_name, difficulty,
+            position_difficulty, p_win, expected_goals_for, p_clean_sheet
+     from player_fixtures where player_code = $1 order by gameweek limit $2`,
+    [code, limit],
+  )
+  return rows.map((r) => ({
+    gameweek: num(r.gameweek),
+    kickoff: r.kickoff_time ? new Date(r.kickoff_time as string).toISOString() : null,
+    isHome: Boolean(r.is_home),
+    opponentShort: (r.opponent_short as string) ?? null,
+    opponentName: (r.opponent_name as string) ?? null,
+    difficulty: num(r.difficulty),
+    positionDifficulty: num(r.position_difficulty),
+    pWin: num(r.p_win),
+    expectedGoalsFor: num(r.expected_goals_for),
+    pCleanSheet: num(r.p_clean_sheet),
+  }))
+}
+
+// ---------------------------------------------------------------------------------------
+// Club page
+// ---------------------------------------------------------------------------------------
+
+export async function getTeamProfile(code: number): Promise<Record<string, unknown> | null> {
+  const rows = await query<Record<string, unknown>>(
+    'select * from team_profile where team_code = $1',
+    [code],
+  )
+  if (!rows.length) return null
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(rows[0])) {
+    out[k] = typeof v === 'string' && v !== '' && Number.isFinite(Number(v)) ? Number(v) : v
+  }
+  return out
+}
+
+export type FormMatch = {
+  kickoff: string | null
+  isHome: boolean
+  opponentShort: string | null
+  goals: number | null
+  opponentGoals: number | null
+  xg: number | null
+  opponentXg: number | null
+  ppda: number | null
+  points: number | null
+  expectedPoints: number | null
+  pointsOverExpected: number | null
+  result: string | null
+}
+
+export async function getTeamForm(code: number, limit = 38): Promise<FormMatch[]> {
+  const rows = await query<Record<string, unknown>>(
+    `select kickoff, is_home, opponent_short, goals, opponent_goals, xg, opponent_xg,
+            ppda, points, expected_points, points_over_expected, result
+     from team_form where team_code = $1 order by kickoff desc limit $2`,
+    [code, limit],
+  )
+  return rows.map((r) => ({
+    kickoff: r.kickoff ? new Date(r.kickoff as string).toISOString() : null,
+    isHome: Boolean(r.is_home),
+    opponentShort: (r.opponent_short as string) ?? null,
+    goals: num(r.goals),
+    opponentGoals: num(r.opponent_goals),
+    xg: num(r.xg),
+    opponentXg: num(r.opponent_xg),
+    ppda: num(r.ppda),
+    points: num(r.points),
+    expectedPoints: num(r.expected_points),
+    pointsOverExpected: num(r.points_over_expected),
+    result: (r.result as string) ?? null,
+  }))
+}
+
+/** The squad, as `player_wide` rows so the club page can reuse the table's formatters. */
+export async function getTeamSquad(code: number): Promise<Record<string, unknown>[]> {
+  const rows = await query<Record<string, unknown>>(
+    'select * from player_wide where team_code = $1 order by element_type, total_points desc nulls last',
+    [code],
+  )
+  return rows.map((r) => {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(r)) {
+      out[k] = typeof v === 'string' && v !== '' && Number.isFinite(Number(v)) ? Number(v) : v
+    }
+    return out
+  })
+}
+
 export type SeasonContext = {
   currentSeason: string
   statsSeason: string | null

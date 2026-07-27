@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Logo } from '@/components/logo'
+import { Search } from '@/components/search'
+import { getSearchIndex } from '@/lib/queries'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -16,7 +18,11 @@ const NAV = [
   { href: '/prices', label: 'Prices' },
 ] as const
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Fetched in the layout so search works from every page with no per-keystroke round trip.
+  // 578 rows; the cost is one cheap query per render, shared by every route.
+  const searchIndex = await getSearchIndex()
+
   return (
     <html lang="en">
       <body className="min-h-screen antialiased">
@@ -47,6 +53,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </Link>
               ))}
             </nav>
+            <div className="ml-auto">
+              <Search index={searchIndex} />
+            </div>
           </div>
         </header>
         <main className="mx-auto max-w-[1800px] px-4 py-6">{children}</main>

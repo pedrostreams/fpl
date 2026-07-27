@@ -222,6 +222,26 @@ class PlayerResolver:
             if not bucket:
                 continue
 
+            # One strong hit plus several weak ones is not ambiguous — it is one answer and
+            # some noise. The weights already say how much each key is worth, and flattening
+            # the bucket threw that ordering away.
+            #
+            # This is not hypothetical. Arsenal's Gabriel (`web_name` "Gabriel", 209 points
+            # last season) went unmatched for exactly this reason: the key "gabriel" collected
+            # his own `web_name` hit at 0.95 *and* the `first_name` of Gabriel Martinelli,
+            # Gabriel Jesus and Gabriel Gudmundsson at 0.58. Four candidates, so it fell
+            # through to the club tiebreak — and three of them are Arsenal, so that could not
+            # separate them either. The result was silence about a top-six asset.
+            #
+            # Safe against the false positives that shaped this file: those all came from
+            # treating an incoming *forename* as a surname, a variant that still does not
+            # exist, and the forename veto above still runs first.
+            if len(bucket) > 1:
+                top = max(w for _, w in bucket.values())
+                strongest = {c: v for c, v in bucket.items() if v[1] >= top - 1e-9}
+                if len(strongest) == 1:
+                    bucket = strongest
+
             if len(bucket) == 1:
                 code, (method, weight) = next(iter(bucket.items()))
             else:

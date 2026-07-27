@@ -11,6 +11,7 @@ player's previous row keeps every transition while dropping the long flat runs.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
 
@@ -106,6 +107,50 @@ def _price_event(new: dict, prev: dict) -> dict | None:
     }
 
 
+def _register_new_players(conn, elements: Sequence[dict]) -> int:
+    """Give any unknown player an identity row, so the capture cannot die on a signing.
+
+    `player_snapshots.player_code` references `players.code`, and `players` is written by the
+    **daily** `dimensions` job. The snapshot runs hourly. So for up to 24 hours after FPL adds
+    a player, this job inserted a row referencing a code that did not exist yet — and because
+    the insert is chunked into one statement, a single new player aborted the whole transaction
+    and lost *everyone's* capture, not just theirs.
+
+    That is exactly what happened on 2026-07-27: five transfer-window signings appeared in
+    bootstrap (Penders, Anselmino, Morita, Maeda, Bamba) and the hourly job failed for 4h42m
+    on `player_snapshots_player_code_fkey`. The transfer window runs to the end of August, so
+    this would have recurred every time a club registered anyone.
+
+    Registering the identity here rather than skipping the player: every column of `players`
+    except `code` is nullable and bootstrap already carries the names, so there is no reason to
+    lose the new player's first day of ownership drift either. `dimensions` fills in the rest —
+    known_name, birth_date, region, opta_code — on its next run and keeps it current.
+    """
+    codes = [e["code"] for e in elements]
+    # db.fetch, not a raw cursor: the connection uses a dict row factory, so r[0] raises
+    # KeyError rather than returning the first column.
+    known = {
+        r["code"]
+        for r in db.fetch(conn, "select code from players where code = any(%s)", (codes,))
+    }
+
+    missing = [
+        {
+            "code": e["code"],
+            "first_name": as_text(e.get("first_name")),
+            "second_name": as_text(e.get("second_name")),
+            "web_name": as_text(e.get("web_name")),
+            "photo": as_text(e.get("photo")),
+            "updated_at": datetime.now(timezone.utc),
+        }
+        for e in elements
+        if e["code"] not in known
+    ]
+    if not missing:
+        return 0
+    return db.insert_ignore(conn, "players", missing, ("code",))
+
+
 def run(client: FplClient, *, dry_run: bool = False) -> dict[str, Any]:
     bootstrap = client.bootstrap()
     events = bootstrap["events"]
@@ -132,6 +177,9 @@ def run(client: FplClient, *, dry_run: bool = False) -> dict[str, Any]:
 
     with db.connect() as conn:
         with db.sync_run(conn, "snapshot") as state:
+            new_players = _register_new_players(conn, bootstrap["elements"])
+            detail["new_players"] = new_players
+
             previous = _latest_by_player(conn, season)
 
             to_insert, price_events = [], []

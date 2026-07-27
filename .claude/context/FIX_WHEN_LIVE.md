@@ -24,6 +24,12 @@ will have happened in between.
 - [ ] `select * from sync_freshness;` → every job inside its cadence
 - [ ] Snapshot series is unbroken across the whole month. `select * from snapshot_coverage;` →
       `minutes_since_last_run` under ~90, `covers_7d = true`
+- [ ] **A brand-new player must not kill the capture.** `players` is written daily and the
+      snapshot runs hourly, so for up to 24 hours a signing exists in bootstrap and not in
+      `players`. That FK violation aborted the whole transaction and lost everyone's capture
+      for 4h42m on 2026-07-27. `snapshot` now registers the identity itself — check
+      `new_players` in its output during the window, and confirm `dimensions` then fills in
+      birth_date, region and opta_code for them
 - [ ] Count the hourly captures actually recorded: `select count(*) from sync_runs where
       job='snapshot' and status='ok' and started_at > now() - interval '7 days'` → expect ~168.
       **Materially fewer means GitHub dropped runs and that time series is gone for good.**
@@ -163,6 +169,33 @@ duplicate or delete a `fixtures` row inside a transaction, render, roll back.
 
 Run this whole block once after GW1 and once after GW5. Each item is something that currently
 *cannot* be wrong because the data is frozen.
+
+### `/player/[code]` and `/team/[code]`
+
+- [ ] **Shot map dot count equals the shot count above it.** The frame is adaptive because a
+      fixed crop silently dropped seven shots taken from beyond 60 m while still counting them
+- [ ] Own goals stay out of the map and out of `player_shot_profile`. Understat files them
+      against the defender at his own goal line, so `profile_check.own_goals_leaked` must be 0
+      and `min_x` must stay near 0.30, not 0.005
+- [ ] The two empty states stay distinct: **"No shots taken"** for a mapped player with none,
+      **"Not measurable"** for one Understat never saw. Check a goalkeeper and a promoted-club
+      signing
+- [ ] `player_career.is_current_season` becomes true for someone. It is 0 rows today because
+      in preseason `stats_season` equals a season `history_past` already has, so the union's
+      second branch has **never fired** — untested, not passing
+- [ ] Club standings still coherent: `profile_check.position_matches_style` true, and
+      `worst_position` equals the number of clubs with style data. This derives last season's
+      table from `team_style.points` because `team_seasons` only ever holds the season being
+      synced — the first draft told the reader Arsenal had no record directly above its 71 goals
+- [ ] After promotion data arrives, `worst_position` should reach 20 and the promoted banner
+      should disappear on its own
+
+### Search
+
+- [ ] `⌘K` and `/` both open it; arrows and Enter navigate
+- [ ] `profile_check.label_in_haystack` still true — every row findable by its own name
+- [ ] Typing a club name puts the club above its players (the 10000 weight)
+- [ ] A newly signed player is searchable within a day of FPL adding him
 
 ### `/players` (was `/scout`)
 

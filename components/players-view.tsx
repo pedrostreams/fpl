@@ -9,6 +9,8 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table'
+import type { Route } from 'next'
+import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { ColumnPicker } from '@/components/column-picker'
 import { PlayerPhoto } from '@/components/player-photo'
@@ -162,10 +164,11 @@ export function PlayersView({
         sortUndefined: 'last',
         cell: ({ row }) => {
           const r = row.original
+          const code = Number(r.player_code)
           return (
             <div className="flex items-center gap-2 px-2 py-1">
               <PlayerPhoto
-                playerCode={Number(r.player_code)}
+                playerCode={code}
                 name={String(r.web_name ?? '')}
                 size={26}
                 accent={POSITION_VAR[String(r.position)]}
@@ -177,16 +180,27 @@ export function PlayersView({
                   title={(r.news as string) || undefined}
                 />
               )}
-              <span className="truncate text-[13px] font-medium">{String(r.web_name ?? '')}</span>
+              {/* The name is the way into the profile — a row is a summary, and the shot map
+                  and career are one click behind it. */}
+              <Link
+                href={`/player/${code}` as Route}
+                className="truncate text-[13px] font-medium hover:underline"
+              >
+                {String(r.web_name ?? '')}
+              </Link>
               <span
                 className="shrink-0 text-[10px] font-semibold"
                 style={{ color: POSITION_VAR[String(r.position)] }}
               >
                 {String(r.position)}
               </span>
-              <span className="shrink-0 text-[11px]" style={{ color: 'var(--faint)' }}>
+              <Link
+                href={`/team/${Number(r.team_code)}` as Route}
+                className="shrink-0 text-[11px] hover:underline"
+                style={{ color: 'var(--faint)' }}
+              >
                 {String(r.team_short ?? '')}
-              </span>
+              </Link>
             </div>
           )
         },

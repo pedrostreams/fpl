@@ -27,6 +27,7 @@ from sync.matching.players import FplPlayer, PlayerResolver, normalise  # noqa: 
 
 ARS, AVL, CHE, NEW, MCI = 3, 7, 8, 4, 43
 BOU, CRY, LIV, SUN, TOT, BRE, NFO, FUL = 91, 31, 14, 56, 6, 94, 17, 54
+LEE = 2
 
 # A pool shaped like the real one, including every collision that made naive matching
 # produce confident nonsense on the first live run.
@@ -66,10 +67,29 @@ POOL = [
     FplPlayer(4006, "Victor", "Munoz", "Munoz", None, LIV),
     FplPlayer(4007, "Rayan", "Cherki", "Cherki", None, MCI),
     FplPlayer(4008, "Gabriel", "Fernando de Jesus", "G.Jesus", "Gabriel Jesus", ARS),
+    # --- The mononym-collides-with-three-forenames trap ----------------------- #
+    # Arsenal's Gabriel went unmatched in the live pool for a whole season's worth of data.
+    # Understat calls him "Gabriel"; the key "gabriel" collects his own web_name at 0.95 *and*
+    # the first_name of Martinelli, Jesus and Gudmundsson at 0.58. Four candidates meant the
+    # club had to arbitrate, and three of them are Arsenal, so it could not. A 209-point
+    # defender had no shot data, no headed xG and no Understat creation numbers.
+    #
+    # All four must resolve, and to different players — which is the part a one-case test
+    # would miss.
+    FplPlayer(5001, "Gabriel", "dos Santos Magalhães", "Gabriel", None, ARS),
+    FplPlayer(5002, "Gabriel", "Teodoro Martinelli Silva", "Martinelli", None, ARS),
+    FplPlayer(5003, "Gabriel", "Gudmundsson", "Gudmundsson", None, LEE),
 ]
 
 # (external name, external team code or None, expected player_code)
 SHOULD_MATCH = [
+    # The mononym trap: a strong unique key must beat several weak coincidental ones.
+    ("Gabriel", ARS, 5001),
+    ("Gabriel Martinelli", ARS, 5002),
+    ("Gabriel Gudmundsson", LEE, 5003),
+    ("Gabriel Jesus", ARS, 4008),
+    # And without the club, the mononym is still unambiguous on web_name alone.
+    ("Gabriel", None, 5001),
     # Spanish/Portuguese double surnames: FPL keeps both, Understat keeps one.
     ("David Raya", ARS, 154561),
     ("Martín Zubimendi", ARS, 481655),
