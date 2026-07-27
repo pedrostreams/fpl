@@ -10,4 +10,4 @@ Wishlist for Later
 8. Player-photo is not contained inside circle. it actually looks like it's on top of the circle, not inside. 
 9. Optimise for mobile responsiveness.
 10. Login with FPL to get current team (before GW deadline)
-11. Email integration with Resend to send emails daily with updates (price changes, "your team is not updated" etc). NOT NOW.
+11. Email integration with Resend to send emails daily with updates (price changes, "your team is not updated" etc). NOT NOW I will inform.
