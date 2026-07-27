@@ -13,6 +13,7 @@ import type { Route } from 'next'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { ColumnPicker } from '@/components/column-picker'
+import { PlayerScatter } from '@/components/player-scatter'
 import { PlayerPhoto } from '@/components/player-photo'
 import { WatchButton } from '@/components/watch-button'
 import { COLUMNS_BY_KEY, PINNED, PRESETS } from '@/lib/columns'
@@ -121,6 +122,9 @@ export function PlayersView({
     startingPreset.sort ? [{ id: startingPreset.sort.key, desc: startingPreset.sort.desc }] : [],
   )
   const [picking, setPicking] = useState(false)
+  // A second rendering of the same filtered rows, not a second screen. Switching modes
+  // keeps the view, the filters and the sort exactly as they were.
+  const [mode, setMode] = useState<'table' | 'chart'>('table')
 
   function applyPreset(p: Preset) {
     setViewKey(p.key)
@@ -317,6 +321,25 @@ export function PlayersView({
         >
           + Columns
         </button>
+        <span className="ml-auto flex items-center gap-1">
+          {(['table', 'chart'] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className="h-7 rounded-lg border px-2.5 text-[11px] font-medium capitalize"
+              style={{
+                background:
+                  mode === m
+                    ? 'color-mix(in oklab, var(--accent) 18%, var(--surface))'
+                    : 'var(--surface)',
+                color: mode === m ? 'var(--accent)' : 'var(--muted)',
+                borderColor: mode === m ? 'var(--accent)' : 'var(--border)',
+              }}
+            >
+              {m}
+            </button>
+          ))}
+        </span>
       </div>
 
       {(activePreset || activeSaved) && (
@@ -433,7 +456,12 @@ export function PlayersView({
         )}
       </div>
 
-      {/* ---- table ---- */}
+      {mode === 'chart' ? (
+        <div className="rounded-xl border p-4" style={{ background: 'var(--surface)' }}>
+          <PlayerScatter rows={visible} positions={filters.positions ?? []} />
+        </div>
+      ) : (
+      /* ---- table ---- */
       <div className="overflow-x-auto rounded-xl border" style={{ background: 'var(--surface)' }}>
         <table className="w-full border-collapse text-[12px]">
           <thead>
@@ -471,6 +499,7 @@ export function PlayersView({
           </p>
         )}
       </div>
+      )}
 
       {picking && (
         <ColumnPicker

@@ -1,6 +1,12 @@
 import { FixtureTicker } from '@/components/fixture-ticker'
+import { TeamScatter } from '@/components/team-scatter'
 import { fmt, fmtInt, fmtPct } from '@/lib/format'
-import { getFixtureTicker, getSeasonContext, getTeams } from '@/lib/queries'
+import {
+  getFixtureTicker,
+  getSeasonContext,
+  getTeamScatterPoints,
+  getTeams,
+} from '@/lib/queries'
 
 export const revalidate = 300
 
@@ -26,10 +32,11 @@ function Heat({ p, children }: { p: number | null; children: React.ReactNode }) 
 }
 
 export default async function TeamsPage() {
-  const [teams, ctx, ticker] = await Promise.all([
+  const [teams, ctx, ticker, scatter] = await Promise.all([
     getTeams(),
     getSeasonContext(),
     getFixtureTicker(),
+    getTeamScatterPoints(),
   ])
   const promoted = teams.filter((t) => !t.hasStyleData)
 
@@ -58,6 +65,18 @@ export default async function TeamsPage() {
         </div>
 
         <FixtureTicker ticker={ticker} />
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight">How the clubs compare</h2>
+          <p className="mt-1 max-w-3xl text-[13px]" style={{ color: 'var(--muted)' }}>
+            Two measures at a time, one dot per club, {ctx.statsSeason}. Better is always up
+            and to the right — an axis where a low number is the good outcome is reversed and
+            says so, the same contract the heatmap follows. Click a dot for the club.
+          </p>
+        </div>
+        <TeamScatter teams={scatter} />
       </section>
 
       <section className="flex flex-col gap-5">

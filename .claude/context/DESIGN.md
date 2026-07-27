@@ -62,6 +62,15 @@ in a `style` prop. Every token has a dark and a light value; dark is the default
 | `--accent` | Interaction, active sort, emphasis. **Green-teal, ~165°** |
 | `--heat-lo` / `--heat-hi` | The two ends of the percentile ramp |
 | `--pos-gkp` `--pos-def` `--pos-mid` `--pos-fwd` | Position identity |
+| `--chart-mark` `--chart-gkp` `--chart-def` `--chart-mid` `--chart-fwd` | Data marks — **not** the same steps as the UI hues |
+
+**Why charts get their own hues.** A data mark has a tighter lightness band than UI text or a
+badge — L 0.48–0.67 in dark, 0.43–0.77 in light — and `--accent` sits at 0.74, so a dot drawn
+in it fails the band check against the chart surface. The chart steps were snapped to the
+nearest passing value and verified with the dataviz palette validator (lightness band, chroma
+floor, contrast vs surface: PASS for all five, both modes). **Only one is ever on a chart at a
+time** — red and green together fail colourblind separation at ΔE 2.5 under deuteranopia, and
+mixing positions on one plot would contradict the within-position rule anyway.
 | `--ok` `--warn` `--danger` | Status only — availability, staleness, sign of a difference |
 
 Everything is **oklch**. The heatmap interpolates continuously across 0–1, and sRGB midtones
@@ -206,6 +215,32 @@ come from.
   remember.
 - **Do not rank what the position does not do.** Correct arithmetic on a meaningless metric is
   still meaningless: a goalkeeper's headed xG is honestly the median and never worth a cell.
+
+---
+
+### Charts
+
+[components/scatter.tsx](../../components/scatter.tsx) is the only chart primitive. Anything
+new goes through the `dataviz` skill's procedure — form, then colour, then **run the palette
+validator**, then marks, then hover, then look at it — not by taste.
+
+- **Better is always up and to the right.** An axis where a low number is the good outcome is
+  reversed, and the axis label says so out loud. The same contract as the heatmap; without it
+  the reader relearns which corner is good on every chart.
+- **One series on a scatter.** It is an all-pairs form, so the categorical cap is three, and
+  our four position hues exceed it. The app's own rule settles it anyway: a centre-back is
+  never compared to a forward, so a scatter shows one position and says so when none is picked.
+  One series means no legend.
+- **Selective direct labels, never one per point.** The outliers by distance from the centroid,
+  with greedy de-collision; everything else is on hover. Measured, not assumed — 15 of 17 clubs
+  labelled with zero collisions.
+- **The hit target is ~24px even when the mark is 10px.** An invisible `r=13` circle above every
+  mark, focusable, Enter/Space activating. A tooltip is never the only route to a value: the
+  table view is always present.
+- **Absent is omitted, never plotted at zero.** A promoted club at the origin would sit in the
+  "worst in the league" corner for having no data. Omit, and say how many and why.
+- **Solid hairline gridlines.** Dashing is reserved for a genuine threshold — the mean lines —
+  because that is what a dashed rule conventionally means.
 
 ## 5. Page skeleton
 

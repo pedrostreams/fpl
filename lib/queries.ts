@@ -347,6 +347,40 @@ export async function getTeamProfile(code: number): Promise<Record<string, unkno
   return out
 }
 
+/** All 20 clubs shaped for the scatter. Promoted sides come back with nulls, not zeros. */
+export async function getTeamScatterPoints(): Promise<
+  {
+    teamCode: number
+    shortName: string
+    name: string
+    xgPerMatch: number | null
+    xgaPerMatch: number | null
+    ppda: number | null
+    deepCompletions: number | null
+    cornerXg: number | null
+    points: number | null
+    cleanSheetPct: number | null
+  }[]
+> {
+  const rows = await query<Record<string, unknown>>(
+    `select team_code, short_name, name, xg_per_match, xga_per_match, ppda,
+            deep_completions, corner_xg, last_points, clean_sheet_pct
+     from team_profile order by short_name`,
+  )
+  return rows.map((r) => ({
+    teamCode: Number(r.team_code),
+    shortName: String(r.short_name ?? ''),
+    name: String(r.name ?? ''),
+    xgPerMatch: num(r.xg_per_match),
+    xgaPerMatch: num(r.xga_per_match),
+    ppda: num(r.ppda),
+    deepCompletions: num(r.deep_completions),
+    cornerXg: num(r.corner_xg),
+    points: num(r.last_points),
+    cleanSheetPct: num(r.clean_sheet_pct),
+  }))
+}
+
 export type FormMatch = {
   kickoff: string | null
   isHome: boolean

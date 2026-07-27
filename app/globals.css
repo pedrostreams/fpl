@@ -34,6 +34,22 @@
   --pos-mid: oklch(0.74 0.14 155);
   --pos-fwd: oklch(0.71 0.16 22);
 
+  /* Chart marks get their own steps.
+     A data mark has a tighter lightness band than UI text or a badge — L 0.48–0.77 in dark,
+     0.43–0.77 in light — and the UI accent at L 0.74 sits outside it, so a dot drawn in
+     --accent fails the band check against the chart surface. These were snapped to the
+     nearest passing step and verified with the dataviz palette validator: lightness band,
+     chroma floor and contrast all PASS against both surfaces.
+     Only ever ONE of these is on a chart at a time. A scatter is an all-pairs form, capped at
+     three categorical series, and mixing positions on one plot would contradict the app's own
+     rule that a centre-back is never compared to a forward. Red and green would fail CVD
+     separation together (ΔE 2.5 deutan) — they simply never appear together. */
+  --chart-mark: oklch(0.64 0.15 163);
+  --chart-gkp: oklch(0.64 0.14 78);
+  --chart-def: oklch(0.64 0.14 243);
+  --chart-mid: oklch(0.64 0.14 155);
+  --chart-fwd: oklch(0.64 0.16 22);
+
   --warn: oklch(0.75 0.15 70);
   --danger: oklch(0.66 0.19 22);
   --ok: oklch(0.74 0.15 155);
@@ -60,6 +76,15 @@
     --pos-mid: oklch(0.52 0.13 155);
     --pos-fwd: oklch(0.55 0.18 22);
 
+    /* Light-mode chart marks. These already sit inside the 0.43-0.77 band, so they are the
+       position hues unchanged; --chart-mark is a touch darker than --accent for contrast
+       against the pale surface. Same validator, same PASS. */
+    --chart-mark: oklch(0.55 0.13 163);
+    --chart-gkp: oklch(0.58 0.14 78);
+    --chart-def: oklch(0.52 0.15 243);
+    --chart-mid: oklch(0.52 0.13 155);
+    --chart-fwd: oklch(0.55 0.18 22);
+
     --warn: oklch(0.58 0.15 70);
     --danger: oklch(0.52 0.20 22);
     --ok: oklch(0.52 0.14 155);
@@ -83,6 +108,14 @@
   --pos-def: oklch(0.52 0.15 243);
   --pos-mid: oklch(0.52 0.13 155);
   --pos-fwd: oklch(0.55 0.18 22);
+  /* Must mirror the prefers-color-scheme block above. Omitting them here would leave the
+     manual light toggle drawing dark-mode marks on a pale surface — the exact failure the
+     theme toggle exists to prevent. */
+  --chart-mark: oklch(0.55 0.13 163);
+  --chart-gkp: oklch(0.58 0.14 78);
+  --chart-def: oklch(0.52 0.15 243);
+  --chart-mid: oklch(0.52 0.13 155);
+  --chart-fwd: oklch(0.55 0.18 22);
   --warn: oklch(0.58 0.15 70);
   --danger: oklch(0.52 0.20 22);
   --ok: oklch(0.52 0.14 155);
