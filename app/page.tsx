@@ -127,7 +127,7 @@ export default async function Dashboard() {
         {/* ---- watchlist ---- */}
         <Panel
           title="Your watchlist"
-          href="/scout"
+          href="/players"
           hrefLabel="Find players"
           lead={
             watchlist.length === 0
@@ -316,7 +316,7 @@ export default async function Dashboard() {
         {/* ---- form ---- */}
         <Panel
           title="Players in form"
-          href="/scout"
+          href="/players"
           hrefLabel="Scout"
           lead={
             form[0]?.basis === 'form' ? (

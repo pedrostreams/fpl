@@ -119,9 +119,13 @@ The one component with real rules.
 
 - Percentile arrives as a `--p` custom property in **0–1**, and `color-mix` does the blend in
   CSS. Nothing computes a colour in JS: switching theme swaps two variables with no re-render.
-- **Colour always means better, never bigger.** `xGC/90` and `Owned` are inverted in SQL
-  before they reach the component. If a new metric is "lower is better", invert the
-  percentile in the view — never in the component, and never leave it to the reader.
+- **Colour always means better, never bigger.** On the fixed screens, `xGC/90` and `Owned` are
+  inverted in SQL before they reach the component. On `/players` the user composes the columns,
+  so there is no view to invert them in: `direction` in [lib/columns.ts](../../lib/columns.ts)
+  carries it instead, and [lib/rank.ts](../../lib/rank.ts) reads it. **Every new catalogue entry
+  must declare a direction**, and `'none'` is a real answer — price, PPDA and G−xG are shown
+  unshaded because "better" is genuinely undefined for them, and colouring them would assert
+  something false. Never leave the direction to the reader.
 - `pct === null` → `.heat-null` hatching, value shown in `--faint`.
 - Every heat cell carries a `title` naming the comparison set: *"87th percentile in
   position"*, *"in the league"*. The set matters — a defender's xGI against forwards is
@@ -155,6 +159,28 @@ A second established pattern, in [components/fixture-ticker.tsx](../../component
   rewards having more fixtures left. Both are shown, the fixture count `#` beside them, and a
   banner appears only while the windows actually differ. Generalise the rule: **when an
   aggregate's denominator varies between rows, put the denominator on screen.**
+
+---
+
+### The composed table
+
+[components/players-view.tsx](../../components/players-view.tsx). A **view** picks columns, a
+**filter** picks rows, and the user builds both.
+
+- **The comparison set is whatever is on screen.** Ranks are computed over the *filtered* rows,
+  so narrowing to forwards under £7.0 rescales the shading to those forwards. That is the
+  question being asked, and the tooltip still names the set.
+- **Ranked within position by default**, across the whole pool only where the metric is
+  team-level or absolute (`scope: 'all'`). A centre-back's xGI against forwards is meaningless.
+- **A zero must never stand in for an unknown.** `player_wide` coalesces headed xG to 0 only
+  for players Understat actually observed; the 159 with no mapping stay null and hatch. The
+  first draft coalesced everything and quietly told the reader that an unmapped player has no
+  aerial threat. Same for the three promoted clubs' corner figures.
+- **A preset that sorts by a rate must bound the sample**, or the default view leads with a
+  two-minute cameo at 3.29 npxG/90.
+- **Sorting nulls last needs `sortUndefined`, not a comparator.** TanStack inverts the
+  comparator on a descending sort, so a comparator that pushes nulls down ascending pulls them
+  to the top descending. Both directions must be checked, on every numeric column.
 
 ## 5. Page skeleton
 

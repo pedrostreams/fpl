@@ -27,6 +27,47 @@ export function fmtSigned(v: number | null | undefined, digits = 2): string {
   return `${v > 0 ? '+' : ''}${v.toFixed(digits)}`
 }
 
+/**
+ * One value, formatted the way its catalogue entry says.
+ *
+ * Centralised because a composed view can put any column anywhere, so "how is this rendered"
+ * cannot live in the component that happens to show it. Every branch routes through the
+ * helpers above, which means the em-dash-for-missing rule holds for columns nobody has
+ * thought of yet.
+ */
+export function formatCell(v: unknown, format: string): string {
+  if (v === null || v === undefined || v === '') return '—'
+  if (format === 'text') return String(v)
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n)) return String(v)
+  switch (format) {
+    case 'int':
+      return fmtInt(n)
+    case 'num1':
+      return fmt(n, 1)
+    case 'num2':
+      return fmt(n, 2)
+    case 'num3':
+      return fmt(n, 3)
+    case 'price':
+      return fmtPrice(n)
+    case 'pct':
+      return fmtPct(n, 1)
+    // A share stored 0..1 rather than 0..100. Multiplying in the formatter keeps the SQL
+    // honest — minutes_share really is a fraction — without every caller remembering.
+    case 'pct0':
+      return fmtPct(n * 100, 0)
+    case 'signed1':
+      return fmtSigned(n, 1)
+    case 'signed2':
+      return fmtSigned(n, 2)
+    case 'rankOf20':
+      return ordinal(n)
+    default:
+      return fmt(n, 2)
+  }
+}
+
 /** "18th of 20". Halves survive a double gameweek, where the rank is a mean of two opponents. */
 export function ordinal(v: number | null | undefined): string {
   if (v === null || v === undefined) return '—'

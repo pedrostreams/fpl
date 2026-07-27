@@ -164,6 +164,23 @@ duplicate or delete a `fixtures` row inside a transaction, render, roll back.
 Run this whole block once after GW1 and once after GW5. Each item is something that currently
 *cannot* be wrong because the data is frozen.
 
+### `/players` (was `/scout`)
+
+- [ ] **Sorting puts nulls last in BOTH directions on every numeric column.** Click each header
+      twice. This is not hypothetical: the composed table shipped a first draft where descending
+      sort put the null rows on top, and it took reading the screen to see it
+- [ ] Every preset that sorts by a per-90 rate still bounds the sample — no two-minute cameo
+      leading a view
+- [ ] Custom views survive a catalogue change: retire a column from `lib/columns.ts`, reload a
+      saved view that used it, and confirm the view still opens with that column skipped
+- [ ] The catalogue audit is silent. `getPlayerWide` logs `[columns] … no matching column in
+      player_wide` once per process if a key is mistyped — check the Vercel function logs
+- [ ] Headed xG and team corner figures are still **null**, not 0, for unmapped players and
+      promoted clubs. `player_wide_check.head_xg_unknown` and `team_corners_unknown` must both
+      stay above zero until Understat covers everyone
+- [ ] Payload still ~142 KB gzipped with in-season data. Measure, don't assume
+- [ ] `/scout` still 308s to `/players?view=overview`
+
 ### `/scout`
 
 - [ ] Percentile heatmaps spread across the full range, computed within position

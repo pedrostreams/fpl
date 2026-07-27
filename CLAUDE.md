@@ -170,7 +170,13 @@ is usually taken by one of the sibling projects), `npm run build`, `npm run type
   put 9 after 10.
 - **No metric is computed in TypeScript.** `lib/queries.ts` only maps columns. If a number
   needs deriving it belongs in a SQL view, where `python -m sync.cli verify` can check it
-  instead of it being verifiable only by eye.
+  instead of it being verifiable only by eye. **One documented exception**, in `lib/rank.ts`:
+  percentiles used *only to shade a cell* are computed client-side. The line is what the number
+  is for — a percentile that feeds a score (`gem_score`, `floor_score`) changes a
+  recommendation and stays in SQL; one that decides how green a cell is does not, and putting
+  it in SQL would mean a migration for every column a user might compose into a view. Match
+  `cume_dist`, never `percent_rank`: they disagree on ties, and percent_rank is what rendered
+  every full-time starter as "37th percentile" on the captain panel.
 - **`typedRoutes: true`** means a `<Link>` to a route that doesn't exist is a build error.
   That is deliberate — it caught the nav pointing at unbuilt pages.
 - Pages use segment `revalidate = 300`. Cache Components (`cacheComponents: true`) are opt-in
@@ -184,9 +190,37 @@ it that a code change can silently break: **colour always means better, never bi
 "lower is better" metrics in the SQL view, never in the component), and **null must never
 render as low** (em dash, or `.heat-null` hatching for an unranked cell).
 
-Payload note: `/scout` ships all 558 rows so filtering and sorting are instant with no
-round-trip. That is 2.4 MB of HTML but **109 KB compressed** (measured, not assumed) — the
-markup is highly repetitive. Don't "optimise" it without measuring the compressed size first.
+**`/players` is the one table, and "view" is the user's word for a saved column set — not a
+Postgres view.** `/scout` and `/gems` were the same 558 rows with different columns and
+different row filters, so a view selects columns and a filter selects rows, both encoded in the
+URL. Three pieces:
+
+- `lib/columns.ts` — the **column catalogue**, every metric registered once with label, group,
+  format and `direction`. Adding a metric is one entry plus one line in `player_wide`; there is
+  no reason to build another page. `direction` is load-bearing: a composed view will put xGC
+  next to xG, and without it one of them shades backwards and the screen recommends the worst
+  defence in the league. `'none'` means show a plain number, which is the honest answer when
+  "better" is undefined (price, PPDA, G−xG).
+- `player_wide` (migration 0015) — one row per player, **every** player, no quality gates. The
+  scoring views filter; a browsing table must not.
+- `saved_views` + `saveView` in `lib/actions.ts` — the user's own compositions. Presets stay in
+  code so the type system checks them against columns that exist.
+
+Payload note: everything ships at once so a column picker never fetches. Measured, not assumed:
+89 columns × 558 players is **53 KB gzipped** as columnar JSON, and the whole `/players`
+document is **142 KB gzipped** — the RSC payload carries the data twice, once as HTML and once
+as hydration props. The old single-view `/scout` was 109 KB. Don't "optimise" without measuring
+the compressed size first.
+
+Two traps this table hit, both found by rendering it and reading the result:
+
+- **A sorting function cannot put nulls last in both directions.** TanStack inverts the
+  comparator when descending, so "return 1 for null" is nulls-first descending. Use
+  `sortUndefined: 'last'` and have the accessor return `undefined`, not `null`. The first
+  render led Overview with a 1.1%-owned player on zero points.
+- **A preset that sorts by a per-90 rate must bound the sample.** Finishers led with a player
+  on two minutes and an npxG/90 of 3.29; the top five in the whole pool all fail
+  `has_reliable_sample`.
 
 ## Data sources — read before adding a stat
 

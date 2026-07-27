@@ -1,60 +1,108 @@
-import { num, query } from './db'
+import { COLUMNS, PRESETS } from './columns'
+import { num, pool, query } from './db'
 
 /**
  * Every read goes through a view defined in supabase/migrations. Nothing here computes a
  * metric — if a number needs deriving, it belongs in SQL where it can be tested with
  * `python -m sync.cli verify` rather than only by looking at a screen.
+ *
+ * (One documented exception: percentiles used purely to shade a cell are computed in
+ * lib/rank.ts. See the header there for where the line is drawn and why.)
  */
 
-export type ScoutRow = {
-  playerCode: number
-  webName: string
-  position: 'GKP' | 'DEF' | 'MID' | 'FWD'
-  elementType: number
-  teamShort: string | null
-  teamName: string | null
-  age: number | null
-  price: number | null
-  selectedByPercent: number | null
-  status: string | null
-  news: string | null
-  isAvailable: boolean
-  chanceOfPlaying: number | null
-  minutes: number | null
-  starts: number | null
-  totalPoints: number | null
-  pointsPer90: number | null
-  xgPer90: number | null
-  xaPer90: number | null
-  xgiPer90: number | null
-  xgcPer90: number | null
-  defconPer90: number | null
-  defconThreshold: number | null
-  bpsPer90: number | null
-  goalsMinusXg: number | null
-  assistsMinusXa: number | null
-  xgBuildupPer90: number | null
-  pointsPerMillion: number | null
-  otherMinutes: number | null
-  pctMinutesOutsideLeague: number | null
-  penaltiesOrder: number | null
-  freekicksOrder: number | null
-  cornersOrder: number | null
-  isColdStart: boolean
-  hasReliableSample: boolean
-  // Percentiles, 0–1 within position. Null when the sample is too small to rank.
-  pct: {
-    xgi: number | null
-    xg: number | null
-    xa: number | null
-    defcon: number | null
-    xgc: number | null
-    points: number | null
-    bps: number | null
-    value: number | null
-    differential: number | null
-    output: number | null
+// ---------------------------------------------------------------------------------------
+// The wide row: every column, every player, one payload
+// ---------------------------------------------------------------------------------------
+
+/** Columnar, not row objects. Keys are written once instead of 558 times — 114 KB → 68 KB. */
+export type WideTable = {
+  cols: string[]
+  rows: unknown[][]
+  /** Column key → index, so the client can address a cell without a per-row object. */
+  index: Record<string, number>
+}
+
+/**
+ * Catalogue keys that `player_wide` does not have.
+ *
+ * A mistyped key would otherwise be invisible: the column simply never appears, the preset
+ * silently renders one column short, and nothing errors. Checked once per process against the
+ * real result-set metadata rather than against a hardcoded list, so it stays true as the view
+ * changes.
+ */
+function auditCatalogue(available: Set<string>): string[] {
+  const missing: string[] = []
+  for (const c of COLUMNS) if (!available.has(c.key)) missing.push(`column ${c.key}`)
+  for (const p of PRESETS) {
+    for (const k of p.columns) {
+      if (!available.has(k)) missing.push(`preset ${p.key} → ${k}`)
+    }
   }
+  return missing
+}
+
+let catalogueAudited = false
+
+export async function getPlayerWide(): Promise<WideTable> {
+  const result = await pool.query('select * from player_wide')
+  const cols = result.fields.map((f) => f.name)
+
+  if (!catalogueAudited) {
+    catalogueAudited = true
+    const missing = auditCatalogue(new Set(cols))
+    if (missing.length) {
+      // Loud, and only once. A dropped column is a wrong screen, not a crash, so it has to
+      // announce itself somewhere a human will look.
+      console.error(
+        `[columns] ${missing.length} catalogue entries have no matching column in ` +
+          `player_wide:\n  ${missing.join('\n  ')}`,
+      )
+    }
+  }
+
+  // `numeric` arrives as a string from node-postgres. Coercing here, once, means the client
+  // never has to know which columns were numeric in Postgres — and sorting never compares
+  // "9" against "10" as text.
+  const numericCols = new Set(
+    result.fields
+      .filter((f) => NUMERIC_OIDS.has(f.dataTypeID))
+      .map((f) => f.name),
+  )
+  const coerce = cols.map((c) => numericCols.has(c))
+
+  const rows = result.rows.map((r: Record<string, unknown>) =>
+    cols.map((c, i) => (coerce[i] ? num(r[c]) : (r[c] ?? null))),
+  )
+
+  return { cols, rows, index: Object.fromEntries(cols.map((c, i) => [c, i])) }
+}
+
+// int2, int4, int8, float4, float8, numeric. int8 and numeric are the ones that arrive as
+// strings; the rest are listed so the set is a complete answer to "is this a number".
+const NUMERIC_OIDS = new Set([21, 23, 20, 700, 701, 1700])
+
+export type SavedView = {
+  id: number
+  name: string
+  columns: string[]
+  filters: Record<string, unknown>
+  sortKey: string | null
+  sortDesc: boolean
+}
+
+export async function getSavedViews(): Promise<SavedView[]> {
+  const rows = await query<Record<string, unknown>>(
+    `select id, name, columns, filters, sort_key, sort_desc
+     from saved_views order by lower(name)`,
+  )
+  return rows.map((r) => ({
+    id: Number(r.id),
+    name: String(r.name),
+    columns: (r.columns as string[]) ?? [],
+    filters: (r.filters as Record<string, unknown>) ?? {},
+    sortKey: (r.sort_key as string) ?? null,
+    sortDesc: Boolean(r.sort_desc),
+  }))
 }
 
 export type SeasonContext = {
@@ -75,87 +123,6 @@ export async function getSeasonContext(): Promise<SeasonContext> {
   }
 }
 
-export async function getScoutRows(): Promise<ScoutRow[]> {
-  // Explicit column list rather than `select *`: player_scout exposes ~70 columns and the
-  // whole result is serialised to the client so the table can sort and filter without a
-  // round-trip. Sending only what is rendered keeps that payload honest.
-  const rows = await query<Record<string, unknown>>(`
-    select
-      player_code, web_name, position, element_type, team_short, team_name, age,
-      price, selected_by_percent, status, news, is_available,
-      chance_of_playing_next_round,
-      minutes, starts, total_points, points_per_90,
-      xg_per_90, xa_per_90, xgi_per_90, xgc_per_90,
-      defcon_per_90, defcon_threshold, bps_per_90,
-      goals_minus_xg, assists_minus_xa, xg_buildup_per_90,
-      points_per_million, other_minutes, pct_minutes_outside_league,
-      penalties_order, direct_freekicks_order, corners_order,
-      is_cold_start, has_reliable_sample,
-      xgi_per_90_percentile, xg_per_90_percentile, xa_per_90_percentile,
-      defcon_per_90_percentile, xgc_per_90_percentile, points_per_90_percentile,
-      bps_per_90_percentile, value_percentile, differential_percentile,
-      output_percentile
-    from player_scout
-    order by total_points desc nulls last, minutes desc nulls last
-  `)
-
-  return rows.map((r) => ({
-    playerCode: Number(r.player_code),
-    webName: String(r.web_name ?? ''),
-    position: (r.position ?? 'MID') as ScoutRow['position'],
-    elementType: Number(r.element_type),
-    teamShort: (r.team_short as string) ?? null,
-    teamName: (r.team_name as string) ?? null,
-    age: num(r.age),
-    price: num(r.price),
-    selectedByPercent: num(r.selected_by_percent),
-    status: (r.status as string) ?? null,
-    news: (r.news as string) ?? null,
-    isAvailable: Boolean(r.is_available),
-    chanceOfPlaying: num(r.chance_of_playing_next_round),
-    minutes: num(r.minutes),
-    starts: num(r.starts),
-    totalPoints: num(r.total_points),
-    pointsPer90: num(r.points_per_90),
-    xgPer90: num(r.xg_per_90),
-    xaPer90: num(r.xa_per_90),
-    xgiPer90: num(r.xgi_per_90),
-    xgcPer90: num(r.xgc_per_90),
-    defconPer90: num(r.defcon_per_90),
-    defconThreshold: num(r.defcon_threshold),
-    bpsPer90: num(r.bps_per_90),
-    goalsMinusXg: num(r.goals_minus_xg),
-    assistsMinusXa: num(r.assists_minus_xa),
-    xgBuildupPer90: num(r.xg_buildup_per_90),
-    pointsPerMillion: num(r.points_per_million),
-    otherMinutes: num(r.other_minutes),
-    pctMinutesOutsideLeague: num(r.pct_minutes_outside_league),
-    penaltiesOrder: num(r.penalties_order),
-    freekicksOrder: num(r.direct_freekicks_order),
-    cornersOrder: num(r.corners_order),
-    isColdStart: Boolean(r.is_cold_start),
-    hasReliableSample: Boolean(r.has_reliable_sample),
-    pct: {
-      xgi: num(r.xgi_per_90_percentile),
-      xg: num(r.xg_per_90_percentile),
-      xa: num(r.xa_per_90_percentile),
-      defcon: num(r.defcon_per_90_percentile),
-      xgc: num(r.xgc_per_90_percentile),
-      points: num(r.points_per_90_percentile),
-      bps: num(r.bps_per_90_percentile),
-      value: num(r.value_percentile),
-      differential: num(r.differential_percentile),
-      output: num(r.output_percentile),
-    },
-  }))
-}
-
-/**
- * One shape for both buying surfaces. `/gems` and the dashboard panel ask different questions
- * — "who is good that nobody owns" against "who should I buy" — but they answer with the same
- * row, so they share a type and a renderer. The only difference is which view supplies `score`
- * and whether the under-10% rule is a filter or just a flag.
- */
 export type TargetRow = {
   playerCode: number
   webName: string
