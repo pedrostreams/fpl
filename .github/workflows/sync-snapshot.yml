@@ -8,12 +8,24 @@ name: sync-snapshot
 
 on:
   schedule:
-    # Hourly baseline.
-    - cron: '0 * * * *'
+    # Hourly baseline, deliberately NOT on the hour.
+    #
+    # Measured 2026-07-27 over the preceding 16 hours: of ~25 scheduled runs, 19 never
+    # started. Not failures — GitHub simply skipped them. The 00:00-02:59 window that this
+    # whole job exists for got 0 of 12. Scheduled workflows are best-effort and are dropped
+    # under load, and ':00' plus '*/15' are the four most contended minutes on the platform
+    # because that is where every naive cron in the world sits.
+    #
+    # Offset minutes are the standard mitigation. It cannot guarantee delivery — nothing can,
+    # on hosted cron — so `snapshot_coverage.minutes_since_last_run` and the run-count check
+    # in FIX_WHEN_LIVE.md §1 stay the real detector.
+    - cron: '23 * * * *'
     # Prices move once nightly, ~01:30-02:30 UK. That is 00:30-01:30 UTC in summer and
     # 01:30-02:30 UTC in winter, so sample 00:00-02:59 UTC to bracket the change in
     # either direction and capture both the pre-change transfer state and the outcome.
-    - cron: '*/15 0-2 * * *'
+    # Three entries plus the :23 baseline gives four samples an hour without two schedules
+    # colliding on the same minute.
+    - cron: '8,38,53 0-2 * * *'
   workflow_dispatch:
 
 concurrency:

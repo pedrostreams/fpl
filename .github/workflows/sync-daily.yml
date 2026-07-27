@@ -5,7 +5,9 @@ name: sync-daily
 
 on:
   schedule:
-    - cron: '30 6 * * *'
+    # :37 rather than :30 — this job was scheduled for 06:30 on 2026-07-27 and GitHub did not
+    # start it until 10:26, nearly four hours late. Round minutes are the contended ones.
+    - cron: '37 6 * * *'
   workflow_dispatch:
     inputs:
       dry_run:

@@ -12,7 +12,7 @@ name: sync-enrich
 
 on:
   schedule:
-    - cron: '15 7 * * *'
+    - cron: '19 7 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
