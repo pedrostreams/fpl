@@ -7,3 +7,5 @@ Wishlist for Later
 5. Analyse this page:https://allaboutfpl.com to see if we can learn something. 
 6. One common player component (Photo, title, subtitle, position, club, upcoming opponent). Think Watchlist and Captain on dashboard + Players table (first column). For reuse and scalabiluity maybe it makes sense to merge into one shared component?
 7. Redirect from Dashboard, Hidden Gems and Teams page to Player/Team profile page.
+8. Player-photo is not contained inside circle. it actually looks like it's on top of the circle, not inside. 
+9. Optimise for mobile responsiveness.

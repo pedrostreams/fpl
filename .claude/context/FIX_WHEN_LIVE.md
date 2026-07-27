@@ -190,6 +190,27 @@ Run this whole block once after GW1 and once after GW5. Each item is something t
 - [ ] After promotion data arrives, `worst_position` should reach 20 and the promoted banner
       should disappear on its own
 
+- [ ] **Percentiles still mean something once the season resets.** After GW1 the pool collapses
+      to whoever clears the reliability floor, so `percentile_check.smallest_quotable_pool` will
+      fall and `not_quotable` will rise. Watch that the profile degrades to "not ranked" rather
+      than quoting a percentile out of a pool of six
+- [ ] `percentile_check.tie_inflated_metrics` stays 0. Early in the season almost everything
+      ties at zero, which is exactly when the mid-rank fix earns its place
+- [ ] Spot-check one player against a public site. The pool and the floor are ours, so the
+      numbers will not match anyone else's exactly — confirm the *ordering* agrees
+
+### Connection budget
+
+- [ ] **The Supabase session pooler allows 15 clients total, shared with the sync jobs.**
+      `/players`, `/player/[code]` and `/team/[code]` are dynamic, so each warm Vercel instance
+      holds up to `max: 3`. Saturating it makes the *hourly snapshot* fail — the one table with
+      no backfill path — because someone was browsing. Seen locally on 2026-07-27 with several
+      builds and preview servers running at once
+- [ ] **Consider moving the web app to the transaction pooler** (port 6543 rather than 5432).
+      It is built for exactly this shape — many short-lived serverless clients — where session
+      mode is not. The sync jobs should stay on the session pooler
+- [ ] Check `select count(*) from pg_stat_activity` under real traffic before deciding
+
 ### Search
 
 - [ ] `⌘K` and `/` both open it; arrows and Enter navigate

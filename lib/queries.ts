@@ -1,4 +1,4 @@
-import { COLUMNS, PRESETS } from './columns'
+import { COLUMNS, COLUMNS_BY_KEY, PRESETS } from './columns'
 import { num, pool, query } from './db'
 
 /**
@@ -159,6 +159,71 @@ export async function getPlayerRow(code: number): Promise<Record<string, unknown
     out[k] = typeof v === 'string' && v !== '' && Number.isFinite(Number(v)) ? Number(v) : v
   }
   return out
+}
+
+export type MetricPercentile = {
+  metric: string
+  value: number | null
+  percentile: number | null
+  rank: number | null
+  poolSize: number | null
+  /** False when the pool is too small or the metric does not vary — do not put it in a sentence. */
+  quotable: boolean
+  higherIsBetter: boolean
+}
+
+let directionsAudited = false
+
+/**
+ * Where a player sits among others in his position, for every metric worth ranking.
+ *
+ * The point, in Peder's words: "xGI/90 does not tell me damn shit without context to other
+ * midfielders." 0.398 is unreadable; "88th percentile for shots but 35th for xA" is a scouting
+ * report.
+ */
+export async function getPlayerPercentiles(code: number): Promise<Map<string, MetricPercentile>> {
+  const rows = await query<Record<string, unknown>>(
+    `select metric, value, percentile, position_rank, pool_size, is_quotable, higher_is_better
+     from player_metric_percentile where player_code = $1`,
+    [code],
+  )
+
+  // `higher_is_better` is declared twice — in the view and as `direction` in lib/columns.ts —
+  // and a disagreement is the worst kind of bug here: the cell shades green while the sentence
+  // beside it reads "worse than 90% of midfielders". Neither is obviously wrong on its own.
+  if (!directionsAudited && rows.length) {
+    directionsAudited = true
+    const clashes: string[] = []
+    for (const r of rows) {
+      const col = COLUMNS_BY_KEY.get(String(r.metric))
+      if (!col || col.direction === 'none') continue
+      const sqlSaysHigher = Boolean(r.higher_is_better)
+      if (sqlSaysHigher !== (col.direction === 'higher')) {
+        clashes.push(
+          `${r.metric}: catalogue says ${col.direction}-is-better, ` +
+            `player_metric_percentile says ${sqlSaysHigher ? 'higher' : 'lower'}`,
+        )
+      }
+    }
+    if (clashes.length) {
+      console.error(`[percentiles] direction mismatch:\n  ${clashes.join('\n  ')}`)
+    }
+  }
+
+  return new Map(
+    rows.map((r) => [
+      String(r.metric),
+      {
+        metric: String(r.metric),
+        value: num(r.value),
+        percentile: num(r.percentile),
+        rank: num(r.position_rank),
+        poolSize: num(r.pool_size),
+        quotable: Boolean(r.is_quotable),
+        higherIsBetter: Boolean(r.higher_is_better),
+      },
+    ]),
+  )
 }
 
 export type Shot = {

@@ -507,6 +507,34 @@ def run(
                 problems.append(f"target_players: fixture rank correlates with output at "
                                 f"{corr} — the fixture axis is not adding information")
 
+        pctl = db.fetch(conn, "select * from percentile_check")
+        if pctl:
+            print("\n=== player_metric_percentile (context for every rate) ===")
+            print(_fmt(pctl))
+            q = pctl[0]
+            for flag, message in (
+                ("percentile_in_range", "a percentile outside (0,1]"),
+                ("rank_in_pool", "a rank outside its own pool"),
+                # Direction is declared twice: here and as `direction` in lib/columns.ts. If
+                # either inverts, the page tells the reader the leakiest defence in the league
+                # is the tightest, and both halves look self-consistent.
+                ("lower_better_ranked_right",
+                 "a lower-is-better metric ranks its worst value first"),
+                ("higher_better_ranked_right",
+                 "a higher-is-better metric ranks its worst value first"),
+            ):
+                if q[flag] is False:
+                    problems.append(f"player_metric_percentile: {message}")
+            # The tie trap, in both directions. cume_dist put 22 goalkeepers tied on 0.000
+            # xG/90 at the 96th percentile for scoring; percent_rank does the mirror image to
+            # a group tied at the top. Mid-rank fixes both, and this is how a regression
+            # announces itself rather than quietly flattering everybody.
+            if q["tie_inflated_metrics"]:
+                problems.append(
+                    f"player_metric_percentile: {q['tie_inflated_metrics']} metric/position "
+                    f"pairs put over 30% of their pool in the top 10% — ties are inflating "
+                    f"percentiles again")
+
         gems = db.fetch(conn, """
             select position, count(*) as n, round(avg(gem_score), 3) as avg_score,
                    round(max(gem_score), 3) as best,

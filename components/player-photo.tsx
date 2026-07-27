@@ -58,7 +58,7 @@ export function PlayerPhoto({
         width: size,
         height: size,
         background: 'var(--surface-2)',
-        boxShadow: accent ? `inset 0 0 0 1.5px ${accent}` : undefined,
+        boxShadow: accent ? `inset 0 0 0 1.5px ${accent}` : undefined
       }}
       title={name}
     >

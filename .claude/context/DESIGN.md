@@ -182,6 +182,31 @@ A second established pattern, in [components/fixture-ticker.tsx](../../component
   comparator on a descending sort, so a comparator that pushes nulls down ascending pulls them
   to the top descending. Both directions must be checked, on every numeric column.
 
+---
+
+### Percentiles
+
+A rate on its own is not information. `0.398 xGI/90` says nothing; *83rd percentile among 148
+midfielders* is a scouting report. So every rate on a player profile carries its rank, and
+[player_metric_percentile](../../supabase/migrations/0018_metric_percentiles.sql) is where they
+come from.
+
+- **Mid-rank, not `cume_dist`, not `percent_rank`.** Both of the obvious choices are wrong on
+  ties, in opposite directions. `percent_rank` gives a tie group its first member's position —
+  every full-time starter read "37th percentile" for minutes. `cume_dist` counts rows at or
+  *below* — all 22 goalkeepers tied on 0.000 xG/90 read "96th percentile" for scoring.
+  `(strictly worse + half of equal) / n` is honest either way. `lib/rank.ts` must match, or the
+  shaded cell and the printed sentence describe the same number differently.
+- **Name the pool, always.** Within position, excluding cold-start players, and the count is on
+  screen. "Better than 88% of midfielders" is worthless if a third of that pool played twenty
+  minutes.
+- **Refuse to quote a percentile that cannot mean anything.** A pool under 12, or a metric that
+  does not vary within the position — `saves` across midfielders is 148 zeros, and ranking them
+  told every one of them they were first. `is_quotable` decides in SQL, so no component has to
+  remember.
+- **Do not rank what the position does not do.** Correct arithmetic on a meaningless metric is
+  still meaningless: a goalkeeper's headed xG is honestly the median and never worth a cell.
+
 ## 5. Page skeleton
 
 ```

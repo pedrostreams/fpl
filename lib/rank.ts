@@ -12,31 +12,36 @@ import type { Column } from './columns'
  * for every column a user might one day pick. That is precisely the friction the column
  * catalogue exists to remove, so it happens here instead.
  *
- * Matching `cume_dist()` rather than `percent_rank()` is not a detail. They disagree on ties,
- * and percent_rank hands a tie group the rank of its *first* member — which is how every
- * full-time starter on the captain panel came out at "37th percentile" for minutes. These
- * distributions are heavily tied at the top, so the same bug is one careless line away.
+ * Ties are the whole difficulty, and both obvious choices are wrong in opposite directions.
+ * `percent_rank` hands a tie group the rank of its *first* member — which is how every
+ * full-time starter on the captain panel came out at "37th percentile" for minutes, tied at
+ * the top and reported near the bottom. `cume_dist` counts rows at or *below*, which put all
+ * 22 goalkeepers tied on 0.000 xG/90 at the 96th percentile for scoring.
+ *
+ * Mid-rank — (strictly worse + half of equal) / n — is honest in both directions, and it is
+ * what `player_metric_percentile` in migration 0018 computes. The two must agree: the table
+ * shades a cell and the profile prints a sentence about the same number, and a reader looking
+ * at a green cell described elsewhere as "median" has no way to tell which one lied.
  */
 
 export type Rankable = Record<string, unknown>
 
-/** Ascending cume_dist: the share of rows whose value is at or below this one. */
-function cumeDist(sorted: number[]): Map<number, number> {
+/**
+ * Mid-rank percentile per distinct value, 1 = best.
+ *
+ * `sorted` must already run worst-to-best, so a lower-is-better metric is handled by reversing
+ * at the call site rather than by a second near-identical function.
+ */
+function midRank(sorted: number[]): Map<number, number> {
   const n = sorted.length
   const out = new Map<number, number>()
-  for (let i = 0; i < n; i++) {
-    // The last index holding this value decides it, so every tied row gets the same share.
-    if (i + 1 === n || sorted[i + 1] !== sorted[i]) out.set(sorted[i], (i + 1) / n)
-  }
-  return out
-}
-
-/** Descending equivalent: the share of rows at or above this one. */
-function cumeDistDesc(sorted: number[]): Map<number, number> {
-  const n = sorted.length
-  const out = new Map<number, number>()
-  for (let i = 0; i < n; i++) {
-    if (i === 0 || sorted[i - 1] !== sorted[i]) out.set(sorted[i], (n - i) / n)
+  let i = 0
+  while (i < n) {
+    let j = i
+    while (j + 1 < n && sorted[j + 1] === sorted[i]) j++
+    // i is how many are strictly worse; (j - i + 1) is how many share this value.
+    out.set(sorted[i], (i + (j - i + 1) / 2) / n)
+    i = j + 1
   }
   return out
 }
@@ -76,8 +81,10 @@ export function rankColumn(
 
   const lookup = new Map<string, Map<number, number>>()
   for (const [g, values] of groups) {
-    values.sort((a, b) => a - b)
-    lookup.set(g, col.direction === 'lower' ? cumeDistDesc(values) : cumeDist(values))
+    // Worst-to-best. For a lower-is-better metric that is descending, which is the only
+    // difference the direction makes — midRank itself never needs to know.
+    values.sort((a, b) => (col.direction === 'lower' ? b - a : a - b))
+    lookup.set(g, midRank(values))
   }
 
   return rows.map((r, i) => {
