@@ -14,7 +14,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { ColumnPicker } from '@/components/column-picker'
 import { PlayerScatter } from '@/components/player-scatter'
-import { PlayerPhoto } from '@/components/player-photo'
+import { PlayerIdentity } from '@/components/player-identity'
 import { WatchButton } from '@/components/watch-button'
 import { COLUMNS_BY_KEY, PINNED, PRESETS } from '@/lib/columns'
 import type { Filters, Preset } from '@/lib/columns'
@@ -168,43 +168,23 @@ export function PlayersView({
         sortUndefined: 'last',
         cell: ({ row }) => {
           const r = row.original
-          const code = Number(r.player_code)
           return (
-            <div className="flex items-center gap-2 px-2 py-1">
-              <PlayerPhoto
-                playerCode={code}
+            <div className="px-2 py-1">
+              {/* The same identity block the dashboard and captain panel use. No opponent here:
+                  `opponents` is a column of this table with its own header and help text, and
+                  printing it twice in one row would be the third convention on screen. */}
+              <PlayerIdentity
+                playerCode={Number(r.player_code)}
                 name={String(r.web_name ?? '')}
+                position={String(r.position)}
+                teamCode={Number(r.team_code)}
+                teamShort={String(r.team_short ?? '')}
+                teamName={r.team_name ? String(r.team_name) : null}
+                status={String(r.status ?? '')}
+                news={(r.news as string) || null}
                 size={26}
-                accent={POSITION_VAR[String(r.position)]}
+                wrap={false}
               />
-              {r.status !== 'a' && (
-                <span
-                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ background: statusColour(String(r.status), null) }}
-                  title={(r.news as string) || undefined}
-                />
-              )}
-              {/* The name is the way into the profile — a row is a summary, and the shot map
-                  and career are one click behind it. */}
-              <Link
-                href={`/player/${code}` as Route}
-                className="truncate text-[13px] font-medium hover:underline"
-              >
-                {String(r.web_name ?? '')}
-              </Link>
-              <span
-                className="shrink-0 text-[10px] font-semibold"
-                style={{ color: POSITION_VAR[String(r.position)] }}
-              >
-                {String(r.position)}
-              </span>
-              <Link
-                href={`/team/${Number(r.team_code)}` as Route}
-                className="shrink-0 text-[11px] hover:underline"
-                style={{ color: 'var(--faint)' }}
-              >
-                {String(r.team_short ?? '')}
-              </Link>
             </div>
           )
         },

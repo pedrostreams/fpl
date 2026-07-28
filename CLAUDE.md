@@ -224,6 +224,16 @@ document is **142 KB gzipped** — the RSC payload carries the data twice, once 
 as hydration props. The old single-view `/scout` was 109 KB. Don't "optimise" without measuring
 the compressed size first.
 
+**A player is rendered by `components/player-identity.tsx`, everywhere.** Five copies existed —
+dashboard, captain panel, table cell, search result, gems card — and they disagreed about spacing,
+about whether the name was a link, and about whether a club crest appeared. Three rules live in
+the component so no call site can drift: identity is always a link (which is what stopped
+`/`, `/gems`, `/teams` and `/prices` being dead ends), the fixture reads `v OPP` / `@ OPP` with
+the word `blank` for no fixture, and tables pass `wrap={false}` because a wrapping identity makes
+row height depend on name length. Callers supply only slots. `components/team-badge.tsx` is the
+crest, keyed on `teams.code` — **never `fpl_id`**, which is season-scoped and would repaint half
+the league the day FPL renumbers.
+
 Two traps this table hit, both found by rendering it and reading the result:
 
 - **A sorting function cannot put nulls last in both directions.** TanStack inverts the

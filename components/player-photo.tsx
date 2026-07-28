@@ -26,12 +26,47 @@
 // day it breaks there is a single line to change. Tracked in FIX_WHEN_LIVE.md.
 const PHOTO_BASE = 'https://resources.premierleague.com/premierleague25/photos/players'
 
-/** Only 40x40 was confirmed to exist; 250x250 never answered. Enough for an avatar. */
-const SIZE = '40x40'
+/**
+ * Two sources, and the path names lie about their dimensions. Measured 2026-07-28:
+ *
+ *     40x40    ->  80 x  80   13 KB   square, the portrait squashed to 1:1
+ *     110x140  -> 220 x 280   97 KB   the real portrait, 2x for retina
+ *     250x250  ->  403
+ *
+ * Size decides which. The 97 KB portrait is right for a 56px profile avatar and wrong for a
+ * table: `/players` has 558 rows, so scrolling the lot would pull 55 MB of headshots. The 80px
+ * square at 13 KB still has 2.9x the pixels a 28px avatar needs.
+ */
+const SOURCES = { small: '40x40', large: '110x140' } as const
 
-export function photoUrl(playerCode: number): string {
-  return `${PHOTO_BASE}/${SIZE}/${playerCode}.png`
+/** Above this the cheap square starts to soften. Below it the retina portrait is waste. */
+const LARGE_FROM = 40
+
+export function photoUrl(playerCode: number, size = 28): string {
+  const src = size >= LARGE_FROM ? SOURCES.large : SOURCES.small
+  return `${PHOTO_BASE}/${src}/${playerCode}.png`
 }
+
+/**
+ * THE CROP, which is the whole of Peder's "the photo looks like it's on top of the circle,
+ * not inside it".
+ *
+ * These are not face shots. They are head-and-torso studio portraits, so `object-fit: cover`
+ * into a circle keeps the *centre* of the frame — which is chest. The forehead gets clipped by
+ * the top of the circle and the rest fills with jersey. Nothing reads as contained because the
+ * head genuinely is jammed against the edge.
+ *
+ * Rendered six players (tall, short, afro, bald, headband, keeper) at five candidate crops and
+ * looked at the sheet. `50% 15%` with a 1.6x zoom is the only one where all six keep a whole
+ * head with margin — 1.8x starts shaving crowns off Palmer and Gibbs-White.
+ *
+ * Expressed as cover + object-position + a scale about the same point, which is
+ * aspect-ratio-agnostic: `cover` normalises first, so one pair of numbers works for both the
+ * 1:1 source and the 0.786 portrait. (Checked algebraically as well as by eye — both routes
+ * land on 7.6%-56.7% of image height.)
+ */
+const FOCUS = '50% 15%'
+const ZOOM = 1.6
 
 function monogram(name: string): string {
   const parts = name.trim().split(/\s+/)
@@ -71,7 +106,7 @@ export function PlayerPhoto({
         {monogram(name)}
       </span>
       <img
-        src={photoUrl(playerCode)}
+        src={photoUrl(playerCode, size)}
         alt=""
         width={size}
         height={size}
@@ -80,7 +115,16 @@ export function PlayerPhoto({
         // Some CDNs refuse hotlinked requests that carry a referrer.
         referrerPolicy="no-referrer"
         className="relative"
-        style={{ width: size, height: size, objectFit: 'cover' }}
+        style={{
+          width: size,
+          height: size,
+          objectFit: 'cover',
+          objectPosition: FOCUS,
+          // The wrapper's overflow-hidden does the clipping; transform never affects layout,
+          // so the circle keeps its exact size whatever the zoom.
+          transform: `scale(${ZOOM})`,
+          transformOrigin: FOCUS,
+        }}
       />
     </span>
   )

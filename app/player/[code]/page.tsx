@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PlayerPhoto } from '@/components/player-photo'
+import { TeamBadge } from '@/components/team-badge'
 import { ShotMap } from '@/components/shot-map'
 import { WatchButton } from '@/components/watch-button'
 import { COLUMNS_BY_KEY } from '@/lib/columns'
@@ -233,7 +234,16 @@ export default async function PlayerPage({ params }: { params: Promise<{ code: s
             </h1>
             <p className="mt-0.5 text-[13px]" style={{ color: 'var(--muted)' }}>
               {fullName && `${fullName} · `}
-              <Link href={`/team/${Number(row.team_code)}`} style={{ color: 'var(--accent)' }}>
+              <Link
+                href={`/team/${Number(row.team_code)}`}
+                className="inline-flex items-center gap-1.5 align-middle"
+                style={{ color: 'var(--accent)' }}
+              >
+                <TeamBadge
+                  teamCode={Number(row.team_code)}
+                  name={String(row.team_name ?? '')}
+                  size={16}
+                />
                 {String(row.team_name ?? '')}
               </Link>
               {row.age ? ` · ${fmtInt(row.age as number)} years` : ''}

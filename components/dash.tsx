@@ -1,7 +1,5 @@
 import Link from 'next/link'
 import type { Route } from 'next'
-import { PlayerPhoto } from '@/components/player-photo'
-import { POSITION_VAR, statusColour } from '@/lib/format'
 
 /**
  * Dashboard furniture. Each panel leads with a sentence stating what the data says, then shows
@@ -49,68 +47,6 @@ export function Panel({
       </div>
       {children}
     </section>
-  )
-}
-
-/** A player line: face, name, position colour, club, and whatever numbers the panel cares about. */
-export function PlayerLine({
-  playerCode,
-  webName,
-  position,
-  teamShort,
-  status,
-  news,
-  right,
-  sub,
-  action,
-}: {
-  playerCode: number
-  webName: string
-  position: string
-  teamShort: string | null
-  status?: string | null
-  news?: string | null
-  right?: React.ReactNode
-  sub?: React.ReactNode
-  action?: React.ReactNode
-}) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <PlayerPhoto
-        playerCode={playerCode}
-        name={webName}
-        size={30}
-        accent={POSITION_VAR[position]}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          {status && status !== 'a' && (
-            <span
-              className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-              style={{ background: statusColour(status, null) }}
-              title={news || undefined}
-            />
-          )}
-          <span className="truncate text-[13px] font-medium">{webName}</span>
-          <span
-            className="shrink-0 text-[10px] font-semibold"
-            style={{ color: POSITION_VAR[position] }}
-          >
-            {position}
-          </span>
-          <span className="shrink-0 text-[11px]" style={{ color: 'var(--faint)' }}>
-            {teamShort}
-          </span>
-        </div>
-        {sub && (
-          <div className="mt-0.5 text-[11px]" style={{ color: 'var(--faint)' }}>
-            {sub}
-          </div>
-        )}
-      </div>
-      {right && <div className="shrink-0 text-right">{right}</div>}
-      {action}
-    </div>
   )
 }
 

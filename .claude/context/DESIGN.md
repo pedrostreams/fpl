@@ -303,6 +303,59 @@ Small, uppercase, meaning-dense. Established vocabulary:
 A badge always has a `title`. Two-to-three characters of jargon are worth it for density,
 but only if hovering explains them.
 
+### Club crests
+
+`resources.premierleague.com/premierleague25/badges/{code}.svg`, keyed on **`teams.code`** —
+the stable code every FK in this schema uses, never the season-scoped `fpl_id`. Verified across
+all 20 clubs; 11 is Everton.
+
+SVG rather than the `badges/50|70|100/{code}.png` ladder: 41 KB of pure vector, no embedded
+raster, so one file per club is sharp from a 14px table row to the 44px club-page header. Twenty
+files, each cached after its first fetch. `object-fit: contain`, never `cover` — crests are not
+square and cover shaves the points off a shield.
+
+`TeamBadge` renders **nothing** for a null code. A player between clubs has no crest; a broken
+image frame would be worse than an absent one.
+
+### Player identity
+
+**One component, `components/player-identity.tsx`.** There were five hand-rolled copies — the
+dashboard, the captain panel, the players table's first cell, a search result, and the gems card
+— differing in spacing, in whether the name was a link, and in whether a crest appeared at all.
+A player is the app's main noun and should look like one thing.
+
+Fixed inside the component so no call site can drift:
+
+- **Identity is a link.** The name goes to `/player/[code]`, the club to `/team/[code]`, always.
+  This is why the dashboard, gems and teams screens stopped being dead ends: the fix was not
+  "add links to three pages" but "identity is a link wherever it appears".
+- **`v OPP` / `@ OPP`** for the next fixture, and the word **blank** when the club has none.
+  The `opponents` *column* encodes home and away as upper and lower case, which is right for a
+  column with a header and help text, and invisible in a line of prose. The two conventions
+  coexist deliberately.
+- **`wrap={false}` in tables.** The identity line wraps by default, which suits a narrow panel.
+  In a table it must not: row height would depend on name length and the rows would stop lining
+  up.
+
+Callers supply only the slots — `lead`, `sub`, `right`, `action`, `chips`. Panels differ in what
+they measure, not in who they are measuring.
+
+### The avatar crop
+
+Player photos are **head-and-torso studio portraits**, not face shots, so `object-fit: cover`
+into a circle keeps the centre of the frame — which is chest — and clips the forehead at the top
+edge. That is the whole of "the photo looks like it's on top of the circle, not inside it".
+
+`object-position: 50% 15%` with `transform: scale(1.6)` about the same point. Chosen by
+rendering six players who differ in build and hair at five candidate crops and looking at the
+sheet: 1.6× is the largest zoom where all six keep a whole head with margin, and 1.8× starts
+shaving crowns. Expressed as cover-then-scale because `cover` normalises the aspect ratio first,
+so one pair of numbers serves both sources.
+
+Two sources, and **the path names lie about their dimensions**: `40x40` serves 80×80 at 13 KB,
+`110x140` serves 220×280 at 97 KB, `250x250` is a 403. Size picks between them at 40px, because
+558 rows × 97 KB is 55 MB of headshots to scroll a table.
+
 ---
 
 ## 7. Interaction

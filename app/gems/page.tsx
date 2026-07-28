@@ -1,6 +1,7 @@
 import { FixtureNote } from '@/components/fixture-note'
+import { PlayerIdentity } from '@/components/player-identity'
 import { WatchButton } from '@/components/watch-button'
-import { POSITION_VAR, fmt, fmtInt, fmtPct, fmtPrice, statusColour } from '@/lib/format'
+import { fmt, fmtInt, fmtPct, fmtPrice } from '@/lib/format'
 import { getHiddenGems, getSeasonContext, getWatchlistCodes } from '@/lib/queries'
 import type { TargetRow } from '@/lib/queries'
 
@@ -54,24 +55,24 @@ function GemCard({ g, i, watched }: { g: TargetRow; i: number; watched: boolean 
       className="flex flex-col gap-3 rounded-xl border p-4"
       style={{ background: 'var(--surface)' }}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
+      {/* Identity is the shared component, so this card is a dead end no longer: the name
+          reaches the profile and the crest reaches the club. Peder's LATER.md item 7. */}
+      <PlayerIdentity
+        playerCode={g.playerCode}
+        name={g.webName}
+        position={g.position}
+        teamCode={g.teamCode}
+        teamShort={g.teamShort}
+        status={g.status}
+        news={g.news}
+        size={32}
+        lead={
           <span className="num text-[11px] font-semibold" style={{ color: 'var(--faint)' }}>
             {String(i + 1).padStart(2, '0')}
           </span>
-          <span
-            className="inline-block h-1.5 w-1.5 rounded-full"
-            style={{ background: statusColour(g.status, null) }}
-            title={g.news || undefined}
-          />
-          <span className="text-[14px] font-semibold">{g.webName}</span>
-          <span className="text-[11px] font-semibold" style={{ color: POSITION_VAR[g.position] }}>
-            {g.position}
-          </span>
-          <span className="text-[11px]" style={{ color: 'var(--faint)' }}>
-            {g.teamShort}
-          </span>
-          {g.penaltiesOrder === 1 && (
+        }
+        chips={
+          g.penaltiesOrder === 1 ? (
             <span
               className="rounded px-1 text-[9px] font-bold"
               style={{
@@ -82,9 +83,9 @@ function GemCard({ g, i, watched }: { g: TargetRow; i: number; watched: boolean 
             >
               P1
             </span>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+          ) : null
+        }
+        right={
           <span
             className="num rounded-md px-2 py-0.5 text-[12px] font-bold"
             style={{
@@ -95,9 +96,9 @@ function GemCard({ g, i, watched }: { g: TargetRow; i: number; watched: boolean 
           >
             {fmt(g.score, 3)}
           </span>
-          <WatchButton playerCode={g.playerCode} watched={watched} />
-        </div>
-      </div>
+        }
+        action={<WatchButton playerCode={g.playerCode} watched={watched} />}
+      />
 
       <div className="text-[11px]">
         <FixtureNote row={g} />

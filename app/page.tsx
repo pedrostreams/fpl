@@ -1,5 +1,6 @@
 import { CaptainPanel } from '@/components/captain-panel'
-import { Metric, Panel, PlayerLine, RunPips } from '@/components/dash'
+import { Metric, Panel, RunPips } from '@/components/dash'
+import { PlayerIdentity } from '@/components/player-identity'
 import { WatchButton } from '@/components/watch-button'
 import { fmt, fmtInt, fmtPct, fmtPrice, fmtSigned, relativeAge } from '@/lib/format'
 import { FixtureNote } from '@/components/fixture-note'
@@ -138,26 +139,20 @@ export default async function Dashboard() {
           {watchlist.length > 0 && (
             <div className="flex flex-col gap-2.5">
               {watchlist.map((w) => (
-                <PlayerLine
+                <PlayerIdentity
                   key={w.playerCode}
                   playerCode={w.playerCode}
-                  webName={w.webName}
+                  name={w.webName}
                   position={w.position}
+                  teamCode={w.teamCode}
                   teamShort={w.teamShort}
                   status={w.status}
                   news={w.news}
+                  opponent={{ short: w.opponentShort, isHome: w.isHome }}
                   sub={
                     <>
                       {fmtPrice(w.price)} · {fmtPct(w.selectedByPercent)} owned
-                      {w.opponentShort && (
-                        <>
-                          {' · next '}
-                          <strong style={{ color: 'var(--muted)' }}>
-                            {w.isHome ? w.opponentShort.toUpperCase() : w.opponentShort.toLowerCase()}
-                          </strong>
-                          {w.nextDifficulty !== null && ` (${(1 - w.nextDifficulty).toFixed(2)} ease)`}
-                        </>
-                      )}
+                      {w.nextDifficulty !== null && ` · ${(1 - w.nextDifficulty).toFixed(2)} ease`}
                     </>
                   }
                   right={
@@ -268,11 +263,12 @@ export default async function Dashboard() {
         >
           <div className="flex flex-col gap-2.5">
             {targets.map((t) => (
-              <PlayerLine
+              <PlayerIdentity
                 key={t.playerCode}
                 playerCode={t.playerCode}
-                webName={t.webName}
+                name={t.webName}
                 position={t.position}
+                teamCode={t.teamCode}
                 teamShort={t.teamShort}
                 status={t.status}
                 news={t.news}
@@ -336,11 +332,12 @@ export default async function Dashboard() {
         >
           <div className="flex flex-col gap-2.5">
             {form.map((p) => (
-              <PlayerLine
+              <PlayerIdentity
                 key={p.playerCode}
                 playerCode={p.playerCode}
-                webName={p.webName}
+                name={p.webName}
                 position={p.position}
+                teamCode={p.teamCode}
                 teamShort={p.teamShort}
                 sub={
                   <>

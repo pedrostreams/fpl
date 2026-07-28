@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PlayerPhoto } from '@/components/player-photo'
+import { TeamBadge } from '@/components/team-badge'
 import { POSITION_VAR } from '@/lib/format'
 import type { SearchEntry } from '@/lib/queries'
 
@@ -158,10 +159,13 @@ export function Search({ index }: { index: SearchEntry[] }) {
                     />
                   ) : (
                     <span
-                      className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded text-[9px] font-bold"
-                      style={{ background: 'var(--surface-2)', color: 'var(--muted)' }}
+                      className="flex h-[26px] w-[26px] shrink-0 items-center justify-center"
+                      title={e.label}
                     >
-                      {e.teamShort}
+                      {/* The crest, not the three-letter code. A club is the one thing in this
+                          app with a universally recognised picture; searching "eve" and seeing
+                          Everton's badge confirms the hit faster than reading "EVE" does. */}
+                      <TeamBadge teamCode={e.teamCode} name={e.label} size={22} />
                     </span>
                   )}
                   <span className="min-w-0 flex-1">

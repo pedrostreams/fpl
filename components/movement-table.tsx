@@ -1,8 +1,9 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { PlayerIdentity } from '@/components/player-identity'
 import type { MovementRow } from '@/lib/queries'
-import { POSITION_VAR, fmt, fmtInt, fmtPct, fmtPrice, fmtSigned, statusColour } from '@/lib/format'
+import { fmt, fmtInt, fmtPct, fmtPrice, fmtSigned } from '@/lib/format'
 
 /**
  * Sorting keys. Each names the column it sorts and whether the interesting end is the top or
@@ -199,23 +200,25 @@ export function MovementTable({ rows, covers24h }: { rows: MovementRow[]; covers
             {sorted.map((r) => (
               <tr key={r.playerCode}>
                 <td className="border-b px-3 py-1.5 whitespace-nowrap">
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ background: statusColour(r.status, r.chanceOfPlaying) }}
-                      title={r.news || undefined}
-                    />
-                    <span className="text-[13px] font-medium">{r.webName}</span>
-                    <span
-                      className="text-[11px] font-semibold"
-                      style={{ color: POSITION_VAR[r.position ?? ''] ?? 'var(--faint)' }}
-                    >
-                      {r.position}
-                    </span>
-                    <span className="text-[11px]" style={{ color: 'var(--faint)' }}>
-                      {r.teamShort}
-                    </span>
-                  </span>
+                  {/* The shared identity block. This screen had no photo, no crest and no way
+                      through to a profile — a price move is exactly the moment you want to look
+                      at the player. `status` here carries `chanceOfPlaying` too, which the
+                      component's dot cannot express, so the news tooltip keeps both. */}
+                  <PlayerIdentity
+                    playerCode={r.playerCode}
+                    name={r.webName}
+                    position={r.position ?? ''}
+                    teamCode={r.teamCode}
+                    teamShort={r.teamShort}
+                    status={r.status}
+                    news={
+                      r.chanceOfPlaying !== null && r.chanceOfPlaying < 100
+                        ? `${r.chanceOfPlaying}% to play${r.news ? ` — ${r.news}` : ''}`
+                        : r.news
+                    }
+                    size={26}
+                    wrap={false}
+                  />
                 </td>
                 <td className="border-b px-2 py-1.5 text-right">
                   <span className="num text-[12px]">{fmtPrice(r.price)}</span>

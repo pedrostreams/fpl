@@ -1,4 +1,7 @@
+import type { Route } from 'next'
+import Link from 'next/link'
 import { FixtureTicker } from '@/components/fixture-ticker'
+import { TeamBadge } from '@/components/team-badge'
 import { TeamScatter } from '@/components/team-scatter'
 import { fmt, fmtInt, fmtPct } from '@/lib/format'
 import {
@@ -147,7 +150,15 @@ export default async function TeamsPage() {
               {teams.map((t) => (
                 <tr key={t.teamCode}>
                   <td className="border-b px-3 py-1.5 whitespace-nowrap">
-                    <span className="text-[13px] font-medium">{t.name}</span>
+                    {/* The crest and the club page, so this table is a way in rather than a
+                        terminus — LATER.md item 7, and the reason item 3 existed. */}
+                    <Link
+                      href={`/team/${t.teamCode}` as Route}
+                      className="inline-flex items-center gap-2 hover:underline"
+                    >
+                      <TeamBadge teamCode={t.teamCode} name={t.name} size={18} />
+                      <span className="text-[13px] font-medium">{t.name}</span>
+                    </Link>
                     {!t.hasStyleData && (
                       <span
                         className="ml-2 rounded px-1 text-[9px] font-semibold uppercase tracking-wide"

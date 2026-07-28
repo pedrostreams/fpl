@@ -116,6 +116,8 @@ export type SearchEntry = {
   sublabel: string | null
   position: string | null
   teamShort: string | null
+  /** The club to draw a crest for. On a club row this equals `code`. */
+  teamCode: number | null
   haystack: string
   weight: number
 }
@@ -128,7 +130,8 @@ export type SearchEntry = {
  */
 export async function getSearchIndex(): Promise<SearchEntry[]> {
   const rows = await query<Record<string, unknown>>(
-    'select kind, code, label, sublabel, position, team_short, haystack, weight from search_index',
+    `select kind, code, label, sublabel, position, team_short, team_code, haystack, weight
+     from search_index`,
   )
   return rows.map((r) => ({
     kind: r.kind as 'player' | 'team',
@@ -137,6 +140,7 @@ export async function getSearchIndex(): Promise<SearchEntry[]> {
     sublabel: (r.sublabel as string) ?? null,
     position: (r.position as string) ?? null,
     teamShort: (r.team_short as string) ?? null,
+    teamCode: r.team_code === null || r.team_code === undefined ? null : Number(r.team_code),
     haystack: String(r.haystack ?? ''),
     weight: Number(r.weight ?? 0),
   }))
@@ -458,6 +462,7 @@ export type TargetRow = {
   position: string
   elementType: number
   teamShort: string | null
+  teamCode: number | null
   price: number | null
   selectedByPercent: number | null
   minutes: number | null
@@ -496,7 +501,7 @@ export type TargetRow = {
   score: number | null
 }
 
-const TARGET_COLUMNS = `player_code, web_name, position, element_type, team_short, price,
+const TARGET_COLUMNS = `player_code, web_name, position, element_type, team_short, team_code, price,
         selected_by_percent, minutes, total_points, xgi_per_90, defcon_per_90, xgc_per_90,
         bps_per_90, points_per_million, output_percentile, differential_percentile,
         value_percentile, is_available, status, news, penalties_order, chance_of_playing,
@@ -511,6 +516,7 @@ function toTarget(r: Record<string, unknown>): TargetRow {
     position: String(r.position ?? ''),
     elementType: Number(r.element_type),
     teamShort: (r.team_short as string) ?? null,
+    teamCode: r.team_code === null || r.team_code === undefined ? null : Number(r.team_code),
     price: num(r.price),
     selectedByPercent: num(r.selected_by_percent),
     minutes: num(r.minutes),
@@ -832,6 +838,7 @@ export type MovementRow = {
   webName: string
   position: string | null
   teamShort: string | null
+  teamCode: number | null
   price: number | null
   selectedByPercent: number | null
   status: string | null
@@ -859,7 +866,7 @@ export type MovementRow = {
 
 export async function getMovement(): Promise<MovementRow[]> {
   const rows = await query<Record<string, unknown>>(`
-    select player_code, web_name, position, team_short, price, selected_by_percent,
+    select player_code, web_name, position, team_short, team_code, price, selected_by_percent,
            status, news, chance_of_playing_next_round, total_points, form,
            price_change_percent, cost_change_event, cost_change_start,
            transfers_in_event, transfers_out_event, net_transfers_event,
@@ -873,6 +880,7 @@ export async function getMovement(): Promise<MovementRow[]> {
     webName: String(r.web_name ?? ''),
     position: (r.position as string) ?? null,
     teamShort: (r.team_short as string) ?? null,
+    teamCode: r.team_code === null || r.team_code === undefined ? null : Number(r.team_code),
     price: num(r.price),
     selectedByPercent: num(r.selected_by_percent),
     status: (r.status as string) ?? null,
@@ -914,6 +922,7 @@ export type WatchRow = {
   webName: string
   position: string
   teamShort: string | null
+  teamCode: number | null
   price: number | null
   selectedByPercent: number | null
   status: string | null
@@ -937,7 +946,7 @@ export type WatchRow = {
 
 export async function getWatchlist(): Promise<WatchRow[]> {
   const rows = await query<Record<string, unknown>>(`
-    select player_code, web_name, position, team_short, price, selected_by_percent,
+    select player_code, web_name, position, team_short, team_code, price, selected_by_percent,
            status, news, is_available, total_points, xgi_per_90, points_per_million,
            output_percentile, is_cold_start, note,
            net_transfers_event, ownership_delta_24h, has_24h_history,
@@ -950,6 +959,7 @@ export async function getWatchlist(): Promise<WatchRow[]> {
     webName: String(r.web_name ?? ''),
     position: String(r.position ?? ''),
     teamShort: (r.team_short as string) ?? null,
+    teamCode: r.team_code === null || r.team_code === undefined ? null : Number(r.team_code),
     price: num(r.price),
     selectedByPercent: num(r.selected_by_percent),
     status: (r.status as string) ?? null,
@@ -976,6 +986,7 @@ export type CaptainPick = {
   webName: string
   position: string
   teamShort: string | null
+  teamCode: number | null
   price: number | null
   selectedByPercent: number | null
   opponentShort: string | null
@@ -1015,7 +1026,7 @@ export type CaptainPick = {
 
 export async function getCaptainPicks(limit = 10): Promise<CaptainPick[]> {
   const rows = await query<Record<string, unknown>>(
-    `select player_code, web_name, position, team_short, price, selected_by_percent,
+    `select player_code, web_name, position, team_short, team_code, price, selected_by_percent,
             opponent_short, opponent_name, is_home, gameweek, xgi_per_90,
             minutes, minutes_share, start_rate, chance_of_playing,
             penalties_order, p_team_scores, p_team_scores_2plus,
@@ -1031,6 +1042,7 @@ export async function getCaptainPicks(limit = 10): Promise<CaptainPick[]> {
     webName: String(r.web_name ?? ''),
     position: String(r.position ?? ''),
     teamShort: (r.team_short as string) ?? null,
+    teamCode: r.team_code === null || r.team_code === undefined ? null : Number(r.team_code),
     price: num(r.price),
     selectedByPercent: num(r.selected_by_percent),
     opponentShort: (r.opponent_short as string) ?? null,
@@ -1240,6 +1252,7 @@ export type FormPlayer = {
   webName: string
   position: string
   teamShort: string | null
+  teamCode: number | null
   price: number | null
   selectedByPercent: number | null
   totalPoints: number | null
@@ -1256,7 +1269,7 @@ export type FormPlayer = {
 
 export async function getFormPlayers(limit = 8): Promise<FormPlayer[]> {
   const rows = await query<Record<string, unknown>>(
-    `select player_code, web_name, position, team_short, price, selected_by_percent,
+    `select player_code, web_name, position, team_short, team_code, price, selected_by_percent,
             total_points, points_per_90, xgi_per_90, goals_minus_xg, output_percentile,
             minutes, form_value, basis
      from form_players limit $1`,
@@ -1267,6 +1280,7 @@ export async function getFormPlayers(limit = 8): Promise<FormPlayer[]> {
     webName: String(r.web_name ?? ''),
     position: String(r.position ?? ''),
     teamShort: (r.team_short as string) ?? null,
+    teamCode: r.team_code === null || r.team_code === undefined ? null : Number(r.team_code),
     price: num(r.price),
     selectedByPercent: num(r.selected_by_percent),
     totalPoints: num(r.total_points),

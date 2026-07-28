@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PlayerPhoto } from '@/components/player-photo'
+import { TeamBadge } from '@/components/team-badge'
 import { COLUMNS_BY_KEY } from '@/lib/columns'
 import { POSITION_VAR, fmt, fmtInt, fmtPct, fmtPrice, formatCell, ordinal } from '@/lib/format'
 import { getSeasonContext, getTeamForm, getTeamProfile, getTeamSquad } from '@/lib/queries'
@@ -77,6 +78,8 @@ export default async function TeamPage({ params }: { params: Promise<{ code: str
         className="flex flex-wrap items-start justify-between gap-5 rounded-xl border p-4"
         style={{ background: 'var(--surface)' }}
       >
+        <div className="flex items-center gap-3">
+          <TeamBadge teamCode={code} name={String(team.name ?? '')} size={44} />
         <div>
           <h1 className="text-xl font-semibold tracking-tight">{String(team.name ?? '')}</h1>
           <p className="mt-1 text-[13px]" style={{ color: 'var(--muted)' }}>
@@ -86,6 +89,7 @@ export default async function TeamPage({ params }: { params: Promise<{ code: str
               : ` · no ${ctx.statsSeason} Premier League record`}
             {team.elo ? ` · Elo ${fmtInt(n('elo'))}` : ''}
           </p>
+        </div>
         </div>
         <div className="flex flex-wrap items-start gap-6">
           <Stat label="Squad" value={fmtInt(squad.length)} />

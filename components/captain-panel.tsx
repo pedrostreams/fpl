@@ -1,9 +1,9 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { PlayerPhoto } from '@/components/player-photo'
+import { PlayerIdentity } from '@/components/player-identity'
 import { WatchButton } from '@/components/watch-button'
-import { POSITION_VAR, fmt, fmtInt, fmtPct } from '@/lib/format'
+import { fmt, fmtInt, fmtPct } from '@/lib/format'
 import type { CaptainPick } from '@/lib/queries'
 
 /**
@@ -148,25 +148,16 @@ export function CaptainPanel({
 
       <div className="flex flex-col gap-2.5">
         {ranked.map((c, i) => (
-          <div key={c.playerCode} className="flex items-center gap-2.5">
-            <PlayerPhoto
-              playerCode={c.playerCode}
-              name={c.webName}
-              size={30}
-              accent={POSITION_VAR[c.position]}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[13px] font-medium">{c.webName}</span>
-                <span
-                  className="text-[10px] font-semibold"
-                  style={{ color: POSITION_VAR[c.position] }}
-                >
-                  {c.position}
-                </span>
-                <span className="text-[11px]" style={{ color: 'var(--faint)' }}>
-                  {c.teamShort} {c.isHome ? 'v' : '@'} {c.opponentShort}
-                </span>
+          <PlayerIdentity
+            key={c.playerCode}
+            playerCode={c.playerCode}
+            name={c.webName}
+            position={c.position}
+            teamCode={c.teamCode}
+            teamShort={c.teamShort}
+            opponent={{ short: c.opponentShort, isHome: c.isHome }}
+            chips={
+              <>
                 {c.penaltiesOrder === 1 && (
                   <span
                     className="rounded px-1 text-[9px] font-bold"
@@ -188,11 +179,13 @@ export function CaptainPanel({
                     no shots
                   </span>
                 )}
-              </div>
-              {/* The raw availability figure, in words, above the rank bars. A percentile is
-                  not enough here: the previous version scored a player on 17% of a season the
-                  same as one on 86%, and nothing on screen would have shown you. */}
-              <div className="mt-0.5 text-[11px]" style={{ color: 'var(--faint)' }}>
+              </>
+            }
+            /* The raw availability figure, in words, above the rank bars. A percentile is not
+               enough here: the previous version scored a player on 17% of a season the same as
+               one on 86%, and nothing on screen would have shown you. */
+            sub={
+              <>
                 played{' '}
                 <strong style={{ color: 'var(--muted)' }}>
                   {fmtPct((c.minutesShare ?? 0) * 100, 0)}
@@ -201,26 +194,28 @@ export function CaptainPanel({
                 {c.chanceOfPlaying !== null && c.chanceOfPlaying < 100 && (
                   <span style={{ color: 'var(--warn)' }}> · {c.chanceOfPlaying}% to play</span>
                 )}
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                {L.parts.map((p) => (
-                  <RankBar key={p.key} value={c.ranks[p.key]} label={p.label} />
-                ))}
-              </div>
-            </div>
-            <span
-              className="num shrink-0 rounded px-1.5 py-0.5 text-[12px] font-bold"
-              style={{
-                background:
-                  i === 0 ? 'color-mix(in oklab, var(--accent) 20%, transparent)' : 'transparent',
-                color: i === 0 ? 'var(--accent)' : 'var(--muted)',
-              }}
-              title={`${L.label}: mean of the percentile ranks shown`}
-            >
-              {fmt(L.of(c), 3)}
-            </span>
-            <WatchButton playerCode={c.playerCode} watched={watched.has(c.playerCode)} />
-          </div>
+                <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                  {L.parts.map((p) => (
+                    <RankBar key={p.key} value={c.ranks[p.key]} label={p.label} />
+                  ))}
+                </span>
+              </>
+            }
+            right={
+              <span
+                className="num rounded px-1.5 py-0.5 text-[12px] font-bold"
+                style={{
+                  background:
+                    i === 0 ? 'color-mix(in oklab, var(--accent) 20%, transparent)' : 'transparent',
+                  color: i === 0 ? 'var(--accent)' : 'var(--muted)',
+                }}
+                title={`${L.label}: mean of the percentile ranks shown`}
+              >
+                {fmt(L.of(c), 3)}
+              </span>
+            }
+            action={<WatchButton playerCode={c.playerCode} watched={watched.has(c.playerCode)} />}
+          />
         ))}
       </div>
 
