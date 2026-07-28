@@ -1,6 +1,9 @@
+import type { Route } from 'next'
+import Link from 'next/link'
 import { CaptainPanel } from '@/components/captain-panel'
 import { Metric, Panel, RunPips } from '@/components/dash'
 import { PlayerIdentity } from '@/components/player-identity'
+import { TeamBadge } from '@/components/team-badge'
 import { WatchButton } from '@/components/watch-button'
 import { fmt, fmtInt, fmtPct, fmtPrice, fmtSigned, relativeAge } from '@/lib/format'
 import { FixtureNote } from '@/components/fixture-note'
@@ -208,7 +211,14 @@ export default async function Dashboard() {
               </div>
               {attackRuns.map((t) => (
                 <div key={t.teamCode} className="flex items-center gap-2 py-0.5">
-                  <span className="w-9 shrink-0 text-[12px] font-medium">{t.shortName}</span>
+                  <Link
+                    href={`/team/${t.teamCode}` as Route}
+                    className="flex shrink-0 items-center gap-1.5 hover:underline"
+                    title={t.name}
+                  >
+                    <TeamBadge teamCode={t.teamCode} name={t.name} size={16} />
+                    <span className="w-9 text-[12px] font-medium">{t.shortName}</span>
+                  </Link>
                   <span className="num w-10 shrink-0 text-[11px]" style={{ color: 'var(--muted)' }}>
                     {fmt(t.xgForPerFixture, 2)}
                   </span>
@@ -225,7 +235,14 @@ export default async function Dashboard() {
               </div>
               {defenceRuns.map((t) => (
                 <div key={t.teamCode} className="flex items-center gap-2 py-0.5">
-                  <span className="w-9 shrink-0 text-[12px] font-medium">{t.shortName}</span>
+                  <Link
+                    href={`/team/${t.teamCode}` as Route}
+                    className="flex shrink-0 items-center gap-1.5 hover:underline"
+                    title={t.name}
+                  >
+                    <TeamBadge teamCode={t.teamCode} name={t.name} size={16} />
+                    <span className="w-9 text-[12px] font-medium">{t.shortName}</span>
+                  </Link>
                   <span className="num w-10 shrink-0 text-[11px]" style={{ color: 'var(--muted)' }}>
                     {fmtPct((t.pCleanSheetPerFixture ?? 0) * 100, 0)}
                   </span>

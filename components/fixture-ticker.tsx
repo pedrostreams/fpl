@@ -1,6 +1,9 @@
 'use client'
 
+import type { Route } from 'next'
+import Link from 'next/link'
 import { useMemo, useState } from 'react'
+import { TeamBadge } from '@/components/team-badge'
 import type { Ticker, TickerFixture, TickerTeam } from '@/lib/queries'
 import { fmt } from '@/lib/format'
 
@@ -303,7 +306,17 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
                     className="sticky left-0 z-10 border-b px-3 py-1 whitespace-nowrap"
                     style={{ background: 'var(--surface)' }}
                   >
-                    <span className="text-[13px] font-medium">{t.shortName}</span>
+                    {/* Crest and link on the row label only, never in the fixture cells. Those
+                        are heatmap-shaded, and 120 crests drawn over 120 coloured backgrounds
+                        would compete with the encoding the table exists for. */}
+                    <Link
+                      href={`/team/${t.teamCode}` as Route}
+                      className="inline-flex items-center gap-2 hover:underline"
+                      title={t.name}
+                    >
+                      <TeamBadge teamCode={t.teamCode} name={t.name} size={18} />
+                      <span className="text-[13px] font-medium">{t.shortName}</span>
+                    </Link>
                     <span
                       className="ml-2 num text-[10px]"
                       style={{ color: 'var(--faint)' }}
