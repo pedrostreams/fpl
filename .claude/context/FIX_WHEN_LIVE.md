@@ -31,8 +31,26 @@ will have happened in between.
       `new_players` in its output during the window, and confirm `dimensions` then fills in
       birth_date, region and opta_code for them
 - [ ] Count the hourly captures actually recorded: `select count(*) from sync_runs where
-      job='snapshot' and status='ok' and started_at > now() - interval '7 days'` → expect ~168.
-      **Materially fewer means GitHub dropped runs and that time series is gone for good.**
+      job='snapshot' and status='ok' and started_at > now() - interval '7 days'` → expect ~231
+      (33/day: hourly plus four an hour across the price window). **Materially fewer means the
+      clock stopped and that time series is gone for good.**
+- [ ] **The clock is pg_cron now, not GitHub — check it directly.** `select * from
+      workflow_dispatch_health;` → `failed_24h = 0`, `pending` ≤ 2, `minutes_since_last` under
+      ~65. A non-zero `failed_24h` names the cause in `last_error`; 401 is the token, 403 is a
+      missing Actions:write permission. Before 0019 the only symptom of either was silence.
+- [ ] **The PAT has an expiry and nothing warns you.** Confirm `github_actions_pat` in
+      `vault.decrypted_secrets` still authenticates: `select dispatch_workflow('sync-snapshot.yml');`
+      then `select collect_dispatch_results();` → `status_code = 204`. Renew with
+      `vault.update_secret`. If it has lapsed, the 3-hourly GitHub backstop is all that has
+      been running, at ~36% delivery.
+- [ ] `select jobname, schedule, active from cron.job;` → all three active. A Supabase project
+      that pauses (7 days idle on the free tier) stops pg_cron with it; hourly traffic should
+      prevent that, but check rather than assume.
+- [ ] Actions minutes: `select * from workflow_dispatch_load;` projects ~1020/month from
+      snapshots alone against a 2000 free-tier private-repo ceiling, with ~400 more from the
+      other workflows. Compare against Settings → Billing, which the REST API will not report
+      without a user-scoped token. **If it is close, thin the daytime hours in `cron.job` — not
+      the price window.**
 - [ ] Storage still well under 500 MB — `verify` prints the total
 - [ ] `python scripts/probe/probe_sources.py` → only Sofascore BLOCKED, nothing FAILED
 - [ ] All four workflows still enabled in the Actions tab (GitHub disables schedules after 60
@@ -58,14 +76,24 @@ morning** — this hour is unrepeatable.
 
 ## 3. The first price change — the night of 2026-08-21/22, ~01:00–03:00 UTC
 
-FPL moves prices around 01:30 UK time. `sync-snapshot` samples every 15 minutes across
-00:00–02:45 specifically to bracket this.
+FPL moves prices around 01:30 UK time. pg_cron dispatches four samples an hour across
+00:00–02:59 UTC (`:02`, `:17`, `:32`, `:47`) specifically to bracket this.
 
+**This night is the one real test of migration 0019.** Under GitHub's own scheduler this window
+delivered 1 of 12 dispatches on 2026-07-28 — measured, not feared. If the new clock also misses
+it, the first night of the labelled training set is gone and no amount of later sampling
+recovers it. Check the mechanism *before* the numbers:
+
+- [ ] `select * from workflow_dispatches where requested_at > '<tonight 00:00Z>' order by
+      requested_at;` → **12 rows, every one `status_code = 204`**. This is the row count the
+      whole migration exists to produce.
 - [ ] `player_price_events` gets its **first rows ever** →
       `select * from player_price_events order by id limit 20`
 - [ ] Direction is right: a player whose `now_cost` went up has a rise event, not a fall
-- [ ] The 15-minute captures actually ran → `select distinct captured_at from
-      player_snapshots where captured_at::time between '00:00' and '03:00' order by 1`
+- [ ] The four-an-hour captures actually ran → `select distinct captured_at from
+      player_snapshots where captured_at::time between '00:00' and '03:00' order by 1`.
+      Insert-on-change means a quiet quarter-hour writes nothing, so a missing instant here is
+      only a gap if `workflow_dispatches` also lacks its 204 — compare the two, don't infer.
 - [ ] `/prices` — **Δ£ start** column becomes non-zero for the movers
 - [ ] Cross-check three risers and three fallers against a public price-change site. **This is
       the labelled training set for the price model — if it is wrong, the model is wrong.**

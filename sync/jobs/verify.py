@@ -462,7 +462,7 @@ def run(
                 problems.append("player_movement has more than one row for some player")
             # Snapshot liveness reads from sync_runs, not from the last row written: the table
             # is insert-on-change, so a healthy hourly job writes nothing while prices are
-            # frozen. 150 minutes allows for GitHub's routinely-late cron.
+            # frozen. 150 minutes is one missed hourly tick plus slack.
             since = m["minutes_since_last_run"]
             if since is None:
                 problems.append("no successful snapshot run recorded — the one series that "
@@ -470,6 +470,60 @@ def run(
             elif since > 150:
                 problems.append(f"last successful snapshot run was {int(since)} minutes ago, "
                                 f"expected hourly — lost time series cannot be recovered")
+
+        # ---------------------------------------------------------------------
+        # The clock itself (migration 0019)
+        # ---------------------------------------------------------------------
+        # The check above catches "no runs happened". This one catches *why*, which is the
+        # part that used to take a morning to work out. A revoked or expired PAT produces a
+        # 401 here hours before the snapshot gap grows big enough to notice, and the two
+        # failures are indistinguishable from the sync_runs side: both look like silence.
+        dsp = db.fetch(conn, "select * from workflow_dispatch_health")
+        if dsp:
+            print("\n=== pg_cron -> workflow_dispatch (the hourly clock) ===")
+            print(_fmt(dsp))
+            for d in dsp:
+                if d["failed_24h"]:
+                    problems.append(
+                        f"{d['workflow']}: {d['failed_24h']} of {d['dispatches_24h']} dispatches "
+                        f"failed in 24h — {d['last_error']}"
+                    )
+                # Pending means pg_net accepted the request and no response came back. A few
+                # in flight is normal; a pile is pg_net's worker not running.
+                if d["pending"] and d["pending"] > 2:
+                    problems.append(
+                        f"{d['workflow']}: {d['pending']} dispatches never got a response — "
+                        f"pg_net's background worker may be stopped"
+                    )
+                gap = d["minutes_since_last"]
+                if gap is not None and gap > 90:
+                    problems.append(
+                        f"{d['workflow']}: last dispatch {int(gap)} minutes ago, scheduled "
+                        f"hourly — check `select * from cron.job` is still active"
+                    )
+        else:
+            # An empty view means no dispatch in 24 hours at all, which is the pg_cron
+            # equivalent of the job being unscheduled. Only worth flagging once the mechanism
+            # exists — before 0019 is applied the view is absent and db.fetch returns nothing,
+            # which is why this is a warning line rather than a problem.
+            print("\n=== pg_cron -> workflow_dispatch ===\n    no dispatches in 24h "
+                  "(migration 0019 not applied, or cron.job inactive)")
+
+        # Actions minutes are the constraint that stops everything at once, and the REST API
+        # will not report them without a user-scoped token. Dispatch count is the half we
+        # control, so it is the half we measure.
+        load = db.fetch(conn, "select * from workflow_dispatch_load")
+        if load and load[0]["dispatches_7d"]:
+            print("\n=== estimated Actions load ===")
+            print(_fmt(load))
+            est = load[0]["est_minutes_month"]
+            # 2000 is the free-plan allowance for a private repo; the other workflows add
+            # roughly 400. Flag at 1600 so there is time to thin the daytime cadence.
+            if est is not None and int(est) > 1600:
+                problems.append(
+                    f"snapshot dispatches alone project {int(est)} Actions minutes/month "
+                    f"against a 2000 free-tier ceiling — thin the daytime cron in cron.job"
+                )
 
         tgt = db.fetch(conn, "select * from target_check")
         if tgt:

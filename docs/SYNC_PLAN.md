@@ -73,8 +73,9 @@ Enrichment tables store the **source's own** ids and names verbatim alongside th
 
 | Job | Schedule (UTC) | Endpoint / source | Why this cadence |
 |---|---|---|---|
-| `snapshot` | `0 * * * *` (hourly) | `bootstrap-static` | Builds the net-transfer curve. Hourly is what price-prediction sites sample at. |
-| `snapshot` (price window) | `*/15 0-2 * * *` | `bootstrap-static` | Prices move once nightly ~01:30–02:30 UK. 15-min sampling brackets the change so we capture both the pre-change state and the outcome. |
+| `snapshot` | `17 * * * *` **in pg_cron** | `bootstrap-static` | Builds the net-transfer curve. Hourly is what price-prediction sites sample at. |
+| `snapshot` (price window) | `2,32,47 0-2 * * *` **in pg_cron** | `bootstrap-static` | Prices move once nightly ~01:30–02:30 UK. Four samples an hour bracket the change so we capture both the pre-change state and the outcome. |
+| `snapshot` (backstop) | `47 */3 * * *` in GitHub Actions | `bootstrap-static` | Survival cadence if pg_cron or its token dies. Not a series. |
 | `fpl-full` | `30 6 * * *` (daily) | `bootstrap-static`, `fixtures`, `element-summary` | Dimensions, fixtures, per-GW history. |
 | `live` | `*/2 * * * *` during matches | `event/{n}/live` | Only enabled on matchdays. Phase 4. |
 | `understat` | `0 7 * * *` (daily) | `soccerdata` | Understat updates post-match; daily is ample. |
@@ -85,8 +86,22 @@ Enrichment tables store the **source's own** ids and names verbatim alongside th
 ownership drift, since transfers and prices are frozen (verified: `max(transfers_in) = 0`).
 Enrichment jobs can run daily from now for team/player history from 2025/26.
 
-GitHub Actions cron is best-effort and can be delayed under load. Every job is
-idempotent, and `sync_runs` plus a staleness view make a skipped run visible.
+**GitHub Actions `schedule` is not merely delayed under load — it is dropped, and heavily.**
+Measured 2026-07-28 over 24 hours: 12 of 33 scheduled snapshot runs delivered, and 1 of the 12
+in the nightly price window this job exists for. `created_at` equalled `run_started_at` on
+every delivered run, so the other 21 were never dispatched at all. Moving every cron off the
+round minute (commit `cd2986a`) took the median gap from ~200 minutes to ~130 and no further;
+packing four entries into one hour bought nothing.
+
+The trigger *type* was the problem, not the minute. `workflow_dispatch` is an ordinary
+API-triggered run and is not subject to the drop, so migration 0019 moved the clock into
+Supabase: `pg_cron` fires `dispatch_workflow()`, which `pg_net`-POSTs the Actions REST API.
+Verified end to end — dispatch to run start in 2 seconds. The Python is untouched and remains
+the single implementation; only the thing holding the clock changed.
+
+Every job is still idempotent, `sync_runs` plus a staleness view make a skipped run visible,
+and `workflow_dispatch_health` now says *why* — a revoked PAT shows as a 401 there hours before
+the snapshot gap grows large enough to notice. `python -m sync.cli verify` asserts on both.
 
 ---
 

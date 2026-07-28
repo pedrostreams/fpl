@@ -7,25 +7,26 @@ name: sync-snapshot
 # players). What it banks in the meantime is ownership drift across 1.57M squads.
 
 on:
+  # THE REAL CLOCK IS NOT HERE. It is pg_cron inside Supabase — migration 0019 — which calls
+  # this workflow through `workflow_dispatch`. Read that migration's header for the numbers;
+  # the short version is that GitHub delivered 12 of 33 scheduled runs over 24 hours and 1 of
+  # 12 in the nightly price window, and moving every cron off the round minute (cd2986a) only
+  # took the median gap from ~200 minutes to ~130. `schedule` is best-effort by design and
+  # cannot be made hourly. `workflow_dispatch` is an ordinary API-triggered run and is not
+  # dropped, so the fix was to change the trigger type rather than the minute.
+  #
+  # Change the cadence in `cron.job`, not in this file:
+  #   select jobname, schedule from cron.job;
+  #   select cron.schedule('snapshot-hourly', '17 * * * *',
+  #                        $$select dispatch_workflow('sync-snapshot.yml')$$);
   schedule:
-    # Hourly baseline, deliberately NOT on the hour.
-    #
-    # Measured 2026-07-27 over the preceding 16 hours: of ~25 scheduled runs, 19 never
-    # started. Not failures — GitHub simply skipped them. The 00:00-02:59 window that this
-    # whole job exists for got 0 of 12. Scheduled workflows are best-effort and are dropped
-    # under load, and ':00' plus '*/15' are the four most contended minutes on the platform
-    # because that is where every naive cron in the world sits.
-    #
-    # Offset minutes are the standard mitigation. It cannot guarantee delivery — nothing can,
-    # on hosted cron — so `snapshot_coverage.minutes_since_last_run` and the run-count check
-    # in FIX_WHEN_LIVE.md §1 stay the real detector.
-    - cron: '23 * * * *'
-    # Prices move once nightly, ~01:30-02:30 UK. That is 00:30-01:30 UTC in summer and
-    # 01:30-02:30 UTC in winter, so sample 00:00-02:59 UTC to bracket the change in
-    # either direction and capture both the pre-change transfer state and the outcome.
-    # Three entries plus the :23 baseline gives four samples an hour without two schedules
-    # colliding on the same minute.
-    - cron: '8,38,53 0-2 * * *'
+    # Backstop only, and deliberately sparse. If pg_net loses its token or pg_cron is disabled
+    # this is what keeps *some* of an unbackfillable series alive until someone notices. Eight
+    # attempts a day at GitHub's observed ~36% delivery is ~3 captures — useless as a series,
+    # enough that `snapshot_coverage` shows a gap rather than a dead table. Sparse because
+    # every run bills at the 1-minute minimum and the primary schedule already spends half
+    # the free private-repo allowance.
+    - cron: '47 */3 * * *'
   workflow_dispatch:
 
 concurrency:

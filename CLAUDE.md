@@ -8,8 +8,8 @@ Football Fix Premium subscription with free sources. See `README.md` for setup a
 
 ## Stack
 
-Python sync (GitHub Actions cron) → Supabase Postgres → Next.js + TS web app (Phase 4,
-not built yet). Sync writes straight to Postgres via `psycopg`; there is no
+Python sync (GitHub Actions, **clocked by pg_cron**) → Supabase Postgres → Next.js + TS web
+app (Phase 4, not built yet). Sync writes straight to Postgres via `psycopg`; there is no
 `Python → JSON → TypeScript` hop, deliberately — that pattern is what left
 `../Sporting_Director_Game`'s enrichment "currently manual".
 
@@ -79,6 +79,18 @@ finished = true` for a few GW1 rows with the revert in a `finally`. `dimensions`
      time something *changed*. Using it as a freshness signal reports a perfectly healthy hourly
      job as dead whenever the market is frozen — which is the entire preseason. Liveness comes
      from `sync_runs`, which records every attempt including the empty ones.
+
+   **The hourly clock is pg_cron, not GitHub Actions `schedule`** (migration 0019). Measured
+   2026-07-28: GitHub delivered **12 of 33** scheduled runs in 24 hours and **1 of 12** in the
+   nightly price window the job exists for, with `created_at = run_started_at` on all 12 — so the
+   rest were never dispatched, not merely late. Moving every cron off the round minute helped
+   from ~200 to ~130 median minutes and no further. `schedule` is best-effort by design;
+   `workflow_dispatch` is not, so `cron.schedule` in Supabase calls `dispatch_workflow()`, which
+   `pg_net`-POSTs the Actions API. **Change the cadence in `cron.job`, not in the workflow file**
+   — the `schedule:` block there is now a sparse 3-hourly backstop for the case where the token
+   lapses. `workflow_dispatch_health` is the thing to read when captures go quiet: it separates
+   "the token is dead" (401) from "the job is unscheduled" from "GitHub is fine and nothing
+   moved", which from `sync_runs` alone all look identical.
 
 ## Cross-source name matching — where a bug is invisible
 
