@@ -99,7 +99,7 @@ export function RunPips({
           className="heat rounded px-1.5 py-0.5 text-[10px] font-semibold"
           // Inverted, as everywhere: colour means better, and 0 difficulty is the easiest.
           style={{ ['--p' as string]: o.difficulty === null ? 0 : 1 - o.difficulty }}
-          title={`${o.isHome ? 'Home' : 'Away'} v ${o.opponentShort} · difficulty ${
+          data-tip={`${o.isHome ? 'Home' : 'Away'} v ${o.opponentShort} · difficulty ${
             o.difficulty === null ? '—' : o.difficulty.toFixed(2)
           }`}
         >

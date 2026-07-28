@@ -53,7 +53,7 @@ function Stat({
 
   return (
     <div
-      title={
+      data-tip={
         [
           col.full + '.',
           show
@@ -226,7 +226,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ code: s
                     background: 'color-mix(in oklab, var(--accent) 22%, transparent)',
                     color: 'var(--accent)',
                   }}
-                  title="First-choice penalty taker"
+                  data-tip="First-choice penalty taker"
                 >
                   P1
                 </span>
@@ -340,7 +340,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ code: s
                     className="heat w-14 shrink-0 rounded px-1.5 py-1 text-center text-[11px] font-semibold"
                     // Inverted, as everywhere: 0 difficulty is the easiest draw.
                     style={{ ['--p' as string]: 1 - (f.positionDifficulty ?? 0.5) }}
-                    title={`Difficulty ${fmt(f.positionDifficulty, 2)}`}
+                    data-tip={`Difficulty ${fmt(f.positionDifficulty, 2)}`}
                   >
                     {f.isHome ? f.opponentShort?.toUpperCase() : f.opponentShort?.toLowerCase()}
                   </span>

@@ -1,6 +1,6 @@
 Wishlist for Later
 
-1. Custom tooltip with more details. 
+1. [DONE 2026-07-28 — one delegated host; 8 445 table cells get value + rank + why] Custom tooltip with more details. 
 2. More "analysis explanation". You should target Brentford now because their current trend is that they are not conceding shots. They have started season well etc. And other examples.
 3. [DONE 2026-07-28 — components/team-badge.tsx, keyed on teams.code, SVG] Implement team logo badges. I.e this is Everton (team Code = 11): https://resources.premierleague.com/premierleague25/badges/11.svg
 4. [DONE 2026-07-27 — /teams scatter + chart mode on /players] Would be cool to view some graphics. I.e I love the X, Y scatter plots with i.e expected goals on X axis and then expected  goals against on Y axis. And then each team is a dot. I love those both for teams and players. So would be great to have this. Also would need your help deciding which ones are useful. 
@@ -11,3 +11,4 @@ Wishlist for Later
 9. Optimise for mobile responsiveness.
 10. Login with FPL to get current team (before GW deadline)
 11. Email integration with Resend to send emails daily with updates (price changes, "your team is not updated" etc). NOT NOW I will inform.
+12. Dark Mode

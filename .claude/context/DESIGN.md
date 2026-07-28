@@ -62,7 +62,9 @@ in a `style` prop. Every token has a dark and a light value; dark is the default
 | `--accent` | Interaction, active sort, emphasis. **Green-teal, ~165°** |
 | `--heat-lo` / `--heat-hi` | The two ends of the percentile ramp |
 | `--pos-gkp` `--pos-def` `--pos-mid` `--pos-fwd` | Position identity |
+| `--tip-bg` / `--tip-border` / `--tip-shadow` | Tooltip panel. Deliberately not `--surface`: it floats above cards that already use it, so it is lifted a step and given the one earned shadow in this language. In light mode it inverts and goes *darker* than the page, because above near-white a lighter panel has no edge to stand on — which is why its foreground tokens are pinned rather than inherited. |
 | `--chart-mark` `--chart-gkp` `--chart-def` `--chart-mid` `--chart-fwd` | Data marks — **not** the same steps as the UI hues |
+| `--ok` `--warn` `--danger` | Status only — availability, staleness, sign of a difference |
 
 **Why charts get their own hues.** A data mark has a tighter lightness band than UI text or a
 badge — L 0.48–0.67 in dark, 0.43–0.77 in light — and `--accent` sits at 0.74, so a dot drawn
@@ -71,7 +73,6 @@ nearest passing value and verified with the dataviz palette validator (lightness
 floor, contrast vs surface: PASS for all five, both modes). **Only one is ever on a chart at a
 time** — red and green together fail colourblind separation at ΔE 2.5 under deuteranopia, and
 mixing positions on one plot would contradict the within-position rule anyway.
-| `--ok` `--warn` `--danger` | Status only — availability, staleness, sign of a difference |
 
 Everything is **oklch**. The heatmap interpolates continuously across 0–1, and sRGB midtones
 go muddy. `color-mix(in oklab, …)` is the only mixing function used; percentages in
@@ -136,9 +137,11 @@ The one component with real rules.
   unshaded because "better" is genuinely undefined for them, and colouring them would assert
   something false. Never leave the direction to the reader.
 - `pct === null` → `.heat-null` hatching, value shown in `--faint`.
-- Every heat cell carries a `title` naming the comparison set: *"87th percentile in
-  position"*, *"in the league"*. The set matters — a defender's xGI against forwards is
-  meaningless, which is why player percentiles are within position.
+- Every heat cell explains itself on hover, and **naming the comparison set is the point**: a
+  defender's xGI against forwards is meaningless, which is why player percentiles are within
+  position. On `/players` that is the resolver in §7 — the metric's full name, the value, *"12th
+  of 148 midfielders shown"*, which direction is better, and the reason the metric exists. On
+  `/teams` it is `data-tip` with the percentile and the league as the set.
 - `--heat-hi` stays mid-dark in dark mode so `--text` keeps contrast at the top of the ramp.
   If you change the ramp, check the darkest cell against the lightest text.
 - A legend showing the 0→1 ramp plus the hatch appears wherever the heatmap does.
@@ -300,8 +303,8 @@ Small, uppercase, meaning-dense. Established vocabulary:
 | `promoted` | `--surface-2` on `--warn` | No prior Premier League season |
 | status dot | 6px round, `--ok`/`--warn`/`--danger` | Availability; `title` carries the news text |
 
-A badge always has a `title`. Two-to-three characters of jargon are worth it for density,
-but only if hovering explains them.
+A badge always carries `data-tip`. Two-to-three characters of jargon are worth it for density,
+but only if hovering explains them — and `title` is not how, see §7.
 
 ### Club crests
 
@@ -359,6 +362,53 @@ Two sources, and **the path names lie about their dimensions**: `40x40` serves 8
 ---
 
 ## 7. Interaction
+
+### Tooltips
+
+**One host, `components/tooltip-host.tsx`, mounted once in the root layout.** A trigger is any
+element with `data-tip`, which a *server* component can emit — so an explanation costs one
+attribute and no client boundary. There are no per-trigger components: `/players` alone has
+**8 445** tagged cells, and a `<Tooltip>` wrapper each would be 8 445 pieces of state.
+
+**Never the native `title` attribute.** Three reasons, in order of how much they matter:
+
+1. It does not appear on **keyboard focus** in any browser, so every explanation in the app was
+   mouse-only — the `P1` badge, the "no shots" chip, why a cell is hatched instead of shaded.
+2. It cannot be structured. Five facts about a fixture arrived as one `·`-joined run of prose,
+   and a `
+`-joined list of stale sync jobs rendered as one line or not at all depending on
+   the browser.
+3. Two tooltips on one element means the browser draws its own over ours, so the two cannot
+   coexist. When you add `data-tip`, remove `title`.
+
+   (`title` on an `<img>` is fine — that is alt-text territory. And `Panel`/`Section` take a
+   `title` **prop** that never reaches the DOM; don't "fix" those.)
+
+**Content: values lead, labels follow.** The value is the large high-contrast element and the
+label above it is small and secondary — a legend answers "which series is this colour", a
+tooltip answers "what is this number", and the reader already has the series. Order is
+title → value → note → rows → why.
+
+**Two ways to supply it, and scale picks which.**
+
+| | Mechanism | Right when |
+|---|---|---|
+| Static | `data-tip`, `data-tip-value`, `data-tip-note`, `data-tip-rows` (via `tipRows()`), `data-tip-why` | A badge, a header, a chart cell. The only route to a *rich* tooltip from a server component. The ticker's 120 fixture cells cost a few KB of repetitive markup and no client code. |
+| Resolved | `data-tip-src` on an ancestor + `registerTipSource()` | Thousands of triggers. `/players` cells carry a 14-byte `data-tip-c` and nothing else; the content is built on hover from data already in memory. Serialising it would be megabytes. |
+
+**A metric tooltip states its comparison set.** "12th of 148 midfielders shown" — and *shown* is
+load-bearing: ranks are computed over the filtered rows, so narrowing to forwards under £7.0
+changes both the shading and the sentence. `describeRank()` shares its pooling code with
+`rankColumn()` so the number in the sentence cannot disagree with the colour of the cell.
+`scripts/probe/prove_rank_detail.mjs` asserts that.
+
+**What it deliberately does not do:** touch (`title` never worked there either, and a long-press
+gesture inside a horizontally scrolling table breaks scrolling), and focus on non-focusable
+elements — a decorative `<span>` stays hover-only rather than 8 000 spans entering the tab
+order. Both are survivable only because of the rule below.
+
+**Tooltips enhance, they never gate.** Every number a tooltip shows is already on screen or in
+the table. Nothing is reachable only by hovering.
 
 - **No client JS unless the interaction needs it.** Pages are server components; only
   `/scout`'s table is `'use client'`. A card grid that never sorts stays on the server.

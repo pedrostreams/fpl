@@ -214,7 +214,7 @@ export default async function Dashboard() {
                   <Link
                     href={`/team/${t.teamCode}` as Route}
                     className="flex shrink-0 items-center gap-1.5 hover:underline"
-                    title={t.name}
+                    data-tip={t.name}
                   >
                     <TeamBadge teamCode={t.teamCode} name={t.name} size={16} />
                     <span className="w-9 text-[12px] font-medium">{t.shortName}</span>
@@ -238,7 +238,7 @@ export default async function Dashboard() {
                   <Link
                     href={`/team/${t.teamCode}` as Route}
                     className="flex shrink-0 items-center gap-1.5 hover:underline"
-                    title={t.name}
+                    data-tip={t.name}
                   >
                     <TeamBadge teamCode={t.teamCode} name={t.name} size={16} />
                     <span className="w-9 text-[12px] font-medium">{t.shortName}</span>
@@ -303,7 +303,7 @@ export default async function Dashboard() {
                           background: 'color-mix(in oklab, var(--accent) 22%, transparent)',
                           color: 'var(--accent)',
                         }}
-                        title="Under 10% owned — a differential rather than template"
+                        data-tip="Under 10% owned — a differential rather than template"
                       >
                         diff
                       </span>
@@ -435,7 +435,7 @@ export default async function Dashboard() {
               <div
                 key={i}
                 className="flex items-center gap-2 border-b py-1.5 last:border-b-0"
-                title={kickoff(m.kickoff)}
+                data-tip={kickoff(m.kickoff)}
               >
                 <span className="w-10 shrink-0 text-right text-[12px] font-medium">
                   {m.homeShort}
@@ -444,22 +444,22 @@ export default async function Dashboard() {
                 <span className="flex h-2 flex-1 overflow-hidden rounded-full">
                   <span
                     style={{ width: `${(m.pHome ?? 0) * 100}%`, background: 'var(--accent)' }}
-                    title={`${m.homeName} ${fmtPct((m.pHome ?? 0) * 100, 0)}`}
+                    data-tip={`${m.homeName} ${fmtPct((m.pHome ?? 0) * 100, 0)}`}
                   />
                   <span
                     style={{ width: `${(m.pDraw ?? 0) * 100}%`, background: 'var(--faint)' }}
-                    title={`Draw ${fmtPct((m.pDraw ?? 0) * 100, 0)}`}
+                    data-tip={`Draw ${fmtPct((m.pDraw ?? 0) * 100, 0)}`}
                   />
                   <span
                     style={{ width: `${(m.pAway ?? 0) * 100}%`, background: 'var(--surface-2)' }}
-                    title={`${m.awayName} ${fmtPct((m.pAway ?? 0) * 100, 0)}`}
+                    data-tip={`${m.awayName} ${fmtPct((m.pAway ?? 0) * 100, 0)}`}
                   />
                 </span>
                 <span className="w-10 shrink-0 text-[12px] font-medium">{m.awayShort}</span>
                 <span
                   className="num w-9 shrink-0 text-right text-[11px]"
                   style={{ color: 'var(--faint)' }}
-                  title="Model expected goals in the match"
+                  data-tip="Model expected goals in the match"
                 >
                   {fmt(m.expectedGoals, 1)}
                 </span>

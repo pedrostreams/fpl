@@ -8,6 +8,7 @@ import {
   getSyncHealth,
   getWatchlistCodes,
 } from '@/lib/queries'
+import { tipRows } from '@/lib/tooltip'
 
 export const revalidate = 300
 
@@ -58,7 +59,10 @@ export default async function PlayersPage({
           </p>
         </div>
         {/* Sync freshness in the UI rather than only in `verify`: a silently stale page is the
-            failure mode a data tool has to guard against. Carried over from /scout. */}
+            failure mode a data tool has to guard against. Carried over from /scout.
+            One job per row now, rather than the newline-joined string this used to be —
+            browsers render `\n` inside a native `title` inconsistently and several ignore it,
+            so a list of five stale jobs arrived as one unreadable line. */}
         <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--faint)' }}>
           {stale.length > 0 ? (
             <span
@@ -67,12 +71,22 @@ export default async function PlayersPage({
                 background: 'color-mix(in oklab, var(--warn) 18%, transparent)',
                 color: 'var(--warn)',
               }}
-              title={stale.map((s) => `${s.job}: ${relativeAge(s.ageSeconds)}`).join('\n')}
+              data-tip="Stale sync jobs"
+              data-tip-note="Every figure on this page is only as fresh as the job that wrote it."
+              data-tip-rows={tipRows(
+                stale.map((s) => [s.job, relativeAge(s.ageSeconds), 'bad'] as [string, string, 'bad']),
+              )}
             >
               {stale.length} sync job{stale.length > 1 ? 's' : ''} stale
             </span>
           ) : (
-            <span title={health.map((h) => `${h.job}: ${relativeAge(h.ageSeconds)}`).join('\n')}>
+            <span
+              data-tip="Sync freshness"
+              data-tip-note="When each job last completed."
+              data-tip-rows={tipRows(
+                health.map((h) => [h.job, relativeAge(h.ageSeconds)] as [string, string]),
+              )}
+            >
               all sync jobs fresh
             </span>
           )}

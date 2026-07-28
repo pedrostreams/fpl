@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Logo } from '@/components/logo'
 import { Search } from '@/components/search'
+import { TooltipHost } from '@/components/tooltip-host'
 import { getSearchIndex } from '@/lib/queries'
 import './globals.css'
 
@@ -59,6 +60,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </div>
         </header>
         <main className="mx-auto max-w-[1800px] px-4 py-6">{children}</main>
+        {/* One tooltip for the whole app, driven by delegated events. Mounted here so a
+            trigger anywhere costs a data attribute and no client boundary — including inside
+            server components, which cannot hold state of their own. */}
+        <TooltipHost />
       </body>
     </html>
   )

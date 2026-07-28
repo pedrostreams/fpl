@@ -54,6 +54,14 @@
   --danger: oklch(0.66 0.19 22);
   --ok: oklch(0.74 0.15 155);
 
+  /* Tooltip surface. Deliberately NOT --surface: the tooltip floats above cards that already
+     use it, and matching them would make it read as part of the page rather than over it.
+     Lifted a step and given a real shadow, which is the one place in this design language a
+     shadow is earned. */
+  --tip-bg: oklch(0.265 0.016 255);
+  --tip-border: oklch(0.36 0.018 255);
+  --tip-shadow: oklch(0.08 0.01 255 / 0.55);
+
   color-scheme: dark;
 }
 
@@ -89,6 +97,12 @@
     --danger: oklch(0.52 0.20 22);
     --ok: oklch(0.52 0.14 155);
 
+    /* Light mode inverts the relationship: the tooltip goes *darker* than the page, because
+       above a near-white surface a lighter panel has no edge to stand on. */
+    --tip-bg: oklch(0.255 0.015 255);
+    --tip-border: oklch(0.38 0.018 255);
+    --tip-shadow: oklch(0.55 0.02 255 / 0.28);
+
     color-scheme: light;
   }
 }
@@ -119,6 +133,9 @@
   --warn: oklch(0.58 0.15 70);
   --danger: oklch(0.52 0.20 22);
   --ok: oklch(0.52 0.14 155);
+  --tip-bg: oklch(0.255 0.015 255);
+  --tip-border: oklch(0.38 0.018 255);
+  --tip-shadow: oklch(0.55 0.02 255 / 0.28);
   color-scheme: light;
 }
 
@@ -178,4 +195,89 @@ body {
 }
 .scroll-thin::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/*
+  Tooltip. One element, positioned by components/tooltip-host.tsx.
+
+  `position: fixed` because the anchor rect comes from getBoundingClientRect, which is already
+  viewport-relative — and because a tooltip inside the table's `overflow: auto` container would
+  be clipped by it, which is the failure the native title never had.
+
+  In light mode the panel stays dark, so the text tokens are pinned rather than inherited: a
+  tooltip is the one surface in the app whose foreground does not follow the theme.
+*/
+.tip {
+  position: fixed;
+  z-index: 200;
+  max-width: 19rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--tip-border);
+  background: var(--tip-bg);
+  box-shadow: 0 6px 20px -4px var(--tip-shadow);
+  color: oklch(0.95 0.005 255);
+  /* Never a hover target itself. Anchored to the element it explains, so the pointer must be
+     able to pass straight through it. */
+  pointer-events: none;
+}
+
+/* What you pointed at — secondary, because you already know. */
+.tip-title {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: oklch(0.72 0.014 255);
+}
+
+/* The number leads. A legend answers "which series is this colour"; a tooltip answers "what
+   is the number here", so the hierarchy is the legend's inverted. */
+.tip-value {
+  margin-top: 0.125rem;
+  font-size: 1.0625rem !important;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.tip-note {
+  margin-top: 0.1875rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: oklch(0.84 0.008 255);
+}
+
+.tip-rows {
+  margin-top: 0.375rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.tip-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.75rem;
+}
+
+.tip-row dt {
+  color: oklch(0.68 0.012 255);
+}
+
+.tip-row dd {
+  font-size: 0.75rem !important;
+}
+
+/* Why the metric exists. Column.why from the catalogue, which until now had no route to the
+   screen at all. */
+.tip-why {
+  margin-top: 0.4375rem;
+  padding-top: 0.4375rem;
+  border-top: 1px solid color-mix(in oklab, var(--tip-border) 70%, transparent);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  font-style: italic;
+  color: oklch(0.74 0.012 255);
 }

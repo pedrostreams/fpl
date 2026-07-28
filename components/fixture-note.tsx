@@ -39,7 +39,7 @@ export function FixtureNote({ row, compact = false }: { row: TargetRow; compact?
         className="heat rounded px-1.5 py-0.5 text-[10px] font-semibold"
         // Inverted, as everywhere: colour means better, and 0 difficulty is the easiest draw.
         style={{ ['--p' as string]: 1 - (row.fixtureDifficulty ?? 0.5) }}
-        title={`Difficulty ${fmt(row.fixtureDifficulty, 2)} · ${
+        data-tip={`Difficulty ${fmt(row.fixtureDifficulty, 2)} · ${
           defensive ? 'expected clean sheets' : 'expected goals for'
         } ${fmt(chance, 2)}`}
       >
@@ -55,7 +55,7 @@ export function FixtureNote({ row, compact = false }: { row: TargetRow; compact?
           <span style={{ color: 'var(--faint)' }}>
             {verb} {fmt(row.opponentPerMatch, 2)} {metric}/match ·{' '}
             <span
-              title={
+              data-tip={
                 `Last season, across the ${row.rankedClubs ?? '?'} clubs with a top-flight ` +
                 `record. The middle of this table is tightly packed — ranks 4 to 17 span only ` +
                 `0.29 xGA per match — so read the rate first and the rank second.`

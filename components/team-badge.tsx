@@ -42,7 +42,7 @@ export function TeamBadge({
     <span
       className="relative inline-flex shrink-0 items-center justify-center"
       style={{ width: size, height: size }}
-      title={name || undefined}
+      data-tip={name || undefined}
     >
       <img
         src={badgeUrl(teamCode)}

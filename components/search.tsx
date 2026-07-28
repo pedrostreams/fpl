@@ -160,7 +160,7 @@ export function Search({ index }: { index: SearchEntry[] }) {
                   ) : (
                     <span
                       className="flex h-[26px] w-[26px] shrink-0 items-center justify-center"
-                      title={e.label}
+                      data-tip={e.label}
                     >
                       {/* The crest, not the three-letter code. A club is the one thing in this
                           app with a universally recognised picture; searching "eve" and seeing

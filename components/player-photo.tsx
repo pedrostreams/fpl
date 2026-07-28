@@ -95,7 +95,7 @@ export function PlayerPhoto({
         background: 'var(--surface-2)',
         boxShadow: accent ? `inset 0 0 0 1.5px ${accent}` : undefined
       }}
-      title={name}
+      data-tip={name}
     >
       {/* Underneath: initials. Visible only when the photo is absent or still loading. */}
       <span

@@ -58,7 +58,7 @@ function RankBar({ value, label }: { value: number | null; label: string }) {
   return (
     <span
       className="flex items-center gap-1"
-      title={`${label}: ${Math.round(p * 100)}th percentile among captain candidates`}
+      data-tip={`${label}: ${Math.round(p * 100)}th percentile among captain candidates`}
     >
       <span className="text-[9px] uppercase tracking-wide" style={{ color: 'var(--faint)' }}>
         {label}
@@ -113,7 +113,7 @@ export function CaptainPanel({
               <button
                 key={k}
                 onClick={() => setLens(k)}
-                title={LENSES[k].hint}
+                data-tip={LENSES[k].hint}
                 className="h-7 rounded-lg border px-2.5 text-[11px] font-medium transition-colors"
                 style={{
                   background: on
@@ -165,7 +165,7 @@ export function CaptainPanel({
                       background: 'color-mix(in oklab, var(--accent) 22%, transparent)',
                       color: 'var(--accent)',
                     }}
-                    title="First-choice penalty taker — a real ceiling spike"
+                    data-tip="First-choice penalty taker — a real ceiling spike"
                   >
                     P1
                   </span>
@@ -174,7 +174,7 @@ export function CaptainPanel({
                   <span
                     className="rounded px-1 text-[9px] font-semibold uppercase"
                     style={{ background: 'var(--surface-2)', color: 'var(--faint)' }}
-                    title="No Understat mapping, so shot volume and chance quality are unknown — ranked on the rest"
+                    data-tip="No Understat mapping, so shot volume and chance quality are unknown — ranked on the rest"
                   >
                     no shots
                   </span>
@@ -209,7 +209,7 @@ export function CaptainPanel({
                     i === 0 ? 'color-mix(in oklab, var(--accent) 20%, transparent)' : 'transparent',
                   color: i === 0 ? 'var(--accent)' : 'var(--muted)',
                 }}
-                title={`${L.label}: mean of the percentile ranks shown`}
+                data-tip={`${L.label}: mean of the percentile ranks shown`}
               >
                 {fmt(L.of(c), 3)}
               </span>

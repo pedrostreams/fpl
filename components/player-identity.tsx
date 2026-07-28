@@ -91,7 +91,7 @@ export function PlayerIdentity({
             <span
               className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
               style={{ background: statusColour(status, null) }}
-              title={news || undefined}
+              data-tip={news || undefined}
             />
           )}
           <Link
@@ -149,7 +149,7 @@ function Opponent({ opponent }: { opponent: IdentityOpponent }) {
       <span
         className="shrink-0 text-[11px]"
         style={{ color: 'var(--faint)' }}
-        title="No fixture in the next gameweek"
+        data-tip="No fixture in the next gameweek"
       >
         blank
       </span>
@@ -159,7 +159,7 @@ function Opponent({ opponent }: { opponent: IdentityOpponent }) {
     <span
       className="num shrink-0 text-[11px]"
       style={{ color: 'var(--faint)' }}
-      title={opponent.isHome ? 'At home' : 'Away'}
+      data-tip={opponent.isHome ? 'At home' : 'Away'}
     >
       {opponent.isHome ? 'v' : '@'} {opponent.short}
     </span>

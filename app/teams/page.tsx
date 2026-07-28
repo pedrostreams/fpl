@@ -27,7 +27,7 @@ function Heat({ p, children }: { p: number | null; children: React.ReactNode }) 
     <span
       className="heat block rounded px-2 py-1 text-right"
       style={{ ['--p' as string]: p }}
-      title={`${Math.round(p * 100)}th percentile in the league`}
+      data-tip={`${Math.round(p * 100)}th percentile in the league`}
     >
       <span className="num">{children}</span>
     </span>

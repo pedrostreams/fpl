@@ -50,6 +50,20 @@ jobs:
       - name: Prove player name matching
         run: python scripts/probe/prove_player_matching.py
 
+      # The third silent path. A cell shaded fully green while its tooltip reads "112th of 148"
+      # is not a crash, it is a lie, and this repo has already shipped two mid-rank bugs
+      # (percent_rank underrating a top tie, cume_dist overrating a bottom one). Node strips the
+      # types off the imported .ts, so the assertions run against the module the browser gets.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Prove the tooltip's rank agrees with the shading
+        run: >
+          node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON
+          --import ./scripts/probe/_ts_resolve.mjs
+          scripts/probe/prove_rank_detail.mjs
+
       - name: Dry-run every sync job
         run: |
           python -m sync.cli dimensions --dry-run --no-cache

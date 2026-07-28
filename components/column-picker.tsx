@@ -111,7 +111,7 @@ export function ColumnPicker({
                       <button
                         key={c.key}
                         onClick={() => toggle(c.key)}
-                        title={
+                        data-tip={
                           [
                             c.full,
                             c.direction === 'none'
@@ -135,12 +135,12 @@ export function ColumnPicker({
                       >
                         {c.label}
                         {c.direction === 'lower' && (
-                          <span style={{ color: 'var(--faint)' }} title="Lower is better">
+                          <span style={{ color: 'var(--faint)' }} data-tip="Lower is better">
                             ↓
                           </span>
                         )}
                         {c.direction === 'none' && (
-                          <span style={{ color: 'var(--faint)' }} title="Not shaded">
+                          <span style={{ color: 'var(--faint)' }} data-tip="Not shaded">
                             ·
                           </span>
                         )}

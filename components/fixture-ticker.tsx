@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react'
 import { TeamBadge } from '@/components/team-badge'
 import type { Ticker, TickerFixture, TickerTeam } from '@/lib/queries'
 import { fmt } from '@/lib/format'
+import { tipRows } from '@/lib/tooltip'
 
 /**
  * Three lenses over the same fixtures. A striker's easy fixture and a centre-back's easy
@@ -61,17 +62,31 @@ const LENSES = {
 
 type LensKey = keyof typeof LENSES
 
-function tooltip(f: TickerFixture): string {
-  const venue = f.isHome ? 'home' : 'away'
-  return [
-    `GW${f.gameweek} ${venue} v ${f.opponentName}`,
-    `win ${Math.round((f.pWin ?? 0) * 100)}%`,
-    `xG ${fmt(f.expectedGoalsFor, 2)} / xGA ${fmt(f.expectedGoalsAgainst, 2)}`,
-    `clean sheet ${Math.round((f.pCleanSheet ?? 0) * 100)}%`,
-    f.fplDifficulty !== null ? `FPL rates this ${f.fplDifficulty}/5` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+/**
+ * A fixture's five numbers, as tooltip attributes.
+ *
+ * Was one `·`-joined string in a native `title`, which put "win 72%" and "clean sheet 31%" in
+ * the same run of prose and made neither scannable. As rows they line up and the reader can
+ * compare two fixtures by hovering each in turn.
+ *
+ * FPL's own rating is included precisely because it disagrees: it uses four values across 760
+ * team-fixtures and puts 45% of the season in one bucket, so seeing 0.31 next to "FPL says 3/5"
+ * is the argument for this whole screen.
+ */
+function tipAttrs(f: TickerFixture, difficulty: number | null) {
+  return {
+    'data-tip': `GW${f.gameweek} ${f.isHome ? 'home v' : 'away at'} ${f.opponentName}`,
+    'data-tip-value': difficulty === null ? '—' : fmt(difficulty, 2),
+    'data-tip-note':
+      difficulty === null ? 'No rating for this fixture' : '0 is the easiest, 1 the hardest',
+    'data-tip-rows': tipRows([
+      ['Win', `${Math.round((f.pWin ?? 0) * 100)}%`],
+      ['Expected goals', fmt(f.expectedGoalsFor, 2)],
+      ['Expected conceded', fmt(f.expectedGoalsAgainst, 2)],
+      ['Clean sheet', `${Math.round((f.pCleanSheet ?? 0) * 100)}%`],
+      f.fplDifficulty !== null && ['FPL rates this', `${f.fplDifficulty}/5`, 'muted'],
+    ]),
+  }
 }
 
 function Cell({ fixtures, lens }: { fixtures: TickerFixture[]; lens: LensKey }) {
@@ -79,7 +94,11 @@ function Cell({ fixtures, lens }: { fixtures: TickerFixture[]; lens: LensKey }) 
   // and for a manager it is the worst outcome on the row.
   if (fixtures.length === 0) {
     return (
-      <div className="heat-null flex h-full min-h-[30px] items-center justify-center">
+      <div
+        className="heat-null flex h-full min-h-[30px] items-center justify-center"
+        data-tip="Blank gameweek"
+        data-tip-note="No fixture, so nobody at this club scores. Hatched rather than shaded because no fixture is not an easy fixture — it is the worst outcome on the row."
+      >
         <span
           className="text-[10px] font-semibold uppercase"
           style={{ color: 'var(--faint)' }}
@@ -101,7 +120,7 @@ function Cell({ fixtures, lens }: { fixtures: TickerFixture[]; lens: LensKey }) 
             key={i}
             className={p === null ? 'heat-null' : 'heat'}
             style={p === null ? undefined : { ['--p' as string]: p }}
-            title={tooltip(f)}
+            {...tipAttrs(f, d)}
           >
             <div className="flex min-h-[30px] items-center justify-center gap-1 px-1">
               {/* Uppercase for home, lowercase for away — the ticker convention every FPL
@@ -165,7 +184,7 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
               <button
                 key={k}
                 onClick={() => setLens(k)}
-                title={LENSES[k].hint}
+                data-tip={LENSES[k].hint}
                 className="h-8 rounded-lg border px-3 text-[12px] font-medium transition-colors"
                 style={{
                   background: on
@@ -248,7 +267,7 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
                   background: 'var(--surface-2)',
                   color: 'var(--muted)',
                 }}
-                title={`Mean ${L.label.toLowerCase()} difficulty over the run — 0 easiest, 1 hardest`}
+                data-tip={`Mean ${L.label.toLowerCase()} difficulty over the run — 0 easiest, 1 hardest`}
               >
                 Run
               </th>
@@ -258,7 +277,7 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
                   background: 'var(--surface-2)',
                   color: 'var(--muted)',
                 }}
-                title={L.rateHint}
+                data-tip={L.rateHint}
               >
                 {L.rateLabel}
               </th>
@@ -268,7 +287,7 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
                   background: 'var(--surface-2)',
                   color: 'var(--muted)',
                 }}
-                title={L.totalHint}
+                data-tip={L.totalHint}
               >
                 {L.totalLabel}
               </th>
@@ -278,7 +297,7 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
                   background: 'var(--surface-2)',
                   color: 'var(--muted)',
                 }}
-                title="Fixtures remaining in the window. The totals are only comparable between clubs with the same number."
+                data-tip="Fixtures remaining in the window. The totals are only comparable between clubs with the same number."
               >
                 #
               </th>
@@ -312,7 +331,7 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
                     <Link
                       href={`/team/${t.teamCode}` as Route}
                       className="inline-flex items-center gap-2 hover:underline"
-                      title={t.name}
+                      data-tip={t.name}
                     >
                       <TeamBadge teamCode={t.teamCode} name={t.name} size={18} />
                       <span className="text-[13px] font-medium">{t.shortName}</span>
@@ -328,7 +347,7 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
                     <div
                       className={s === null ? 'heat-null rounded' : 'heat rounded'}
                       style={s === null ? undefined : { ['--p' as string]: 1 - s }}
-                      title={`Mean ${L.label.toLowerCase()} difficulty ${fmt(s, 3)} over ${t.run.fixtures} fixtures`}
+                      data-tip={`Mean ${L.label.toLowerCase()} difficulty ${fmt(s, 3)} over ${t.run.fixtures} fixtures`}
                     >
                       <span className="num block px-2 py-1 text-right">{fmt(s, 3)}</span>
                     </div>
@@ -343,7 +362,7 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
                     <span
                       className="num text-[12px]"
                       style={{ color: short ? 'var(--faint)' : 'var(--muted)' }}
-                      title={
+                      data-tip={
                         short
                           ? `Only ${t.run.fixtures} of ${fullWindow} fixtures left in the window, so this total is not comparable with the rest`
                           : undefined
@@ -356,7 +375,7 @@ export function FixtureTicker({ ticker }: { ticker: Ticker }) {
                     <span
                       className="num text-[12px]"
                       style={{ color: short ? 'var(--warn)' : 'var(--faint)' }}
-                      title={
+                      data-tip={
                         short
                           ? 'Fewer fixtures than the fullest window — already played this gameweek, or a blank'
                           : undefined

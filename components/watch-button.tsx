@@ -29,7 +29,7 @@ export function WatchButton({
       type="button"
       aria-pressed={optimistic}
       aria-label={optimistic ? 'Remove from watchlist' : 'Save to watchlist'}
-      title={optimistic ? 'On your watchlist — click to remove' : 'Save to your watchlist'}
+      data-tip={optimistic ? 'On your watchlist — click to remove' : 'Save to your watchlist'}
       onClick={(e) => {
         // The row itself may be clickable for sorting; a heart click is not a row click.
         e.stopPropagation()

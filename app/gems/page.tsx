@@ -13,7 +13,7 @@ function Bar({ value, label, hint }: { value: number | null; label: string; hint
   return (
     <div
       className="flex items-center gap-2"
-      title={hint ?? `${label}: ${Math.round(p * 100)}th percentile`}
+      data-tip={hint ?? `${label}: ${Math.round(p * 100)}th percentile`}
     >
       <span
         className="w-[68px] shrink-0 text-[10px] uppercase tracking-wider"
@@ -79,7 +79,7 @@ function GemCard({ g, i, watched }: { g: TargetRow; i: number; watched: boolean 
                 background: 'color-mix(in oklab, var(--accent) 22%, transparent)',
                 color: 'var(--accent)',
               }}
-              title="First-choice penalty taker"
+              data-tip="First-choice penalty taker"
             >
               P1
             </span>
@@ -92,7 +92,7 @@ function GemCard({ g, i, watched }: { g: TargetRow; i: number; watched: boolean 
               background: 'color-mix(in oklab, var(--accent) 20%, transparent)',
               color: 'var(--accent)',
             }}
-            title="Mean of the five percentiles below"
+            data-tip="Mean of the five percentiles below"
           >
             {fmt(g.score, 3)}
           </span>
@@ -117,7 +117,7 @@ function GemCard({ g, i, watched }: { g: TargetRow; i: number; watched: boolean 
         {/* Share of the season, not the raw minutes total. 540 minutes reads as a real
             sample; 15.8% of a season reads as a backup keeper. The first draft of this page
             ranked one at 01 and nothing on screen would have told you. */}
-        <span title={`${fmtInt(g.minutes)} of a possible ${fmtInt((g.minutes ?? 0) / Math.max(g.minutesShare ?? 1, 0.001))} minutes`}>
+        <span data-tip={`${fmtInt(g.minutes)} of a possible ${fmtInt((g.minutes ?? 0) / Math.max(g.minutesShare ?? 1, 0.001))} minutes`}>
           <span style={{ color: 'var(--text)' }}>{fmtPct((g.minutesShare ?? 0) * 100, 0)}</span>{' '}
           of the season
         </span>
@@ -144,13 +144,13 @@ function GemCard({ g, i, watched }: { g: TargetRow; i: number; watched: boolean 
       </div>
 
       <div className="num flex flex-wrap gap-3 border-t pt-2 text-[11px]" style={{ color: 'var(--faint)' }}>
-        <span title="Expected goal involvement per 90">xGI {fmt(g.xgiPer90, 3)}</span>
-        <span title="Defensive contribution per 90">DC {fmt(g.defconPer90, 1)}</span>
-        <span title="Expected goals conceded per 90">xGC {fmt(g.xgcPer90, 2)}</span>
-        <span title="Bonus points system score per 90 — the input FPL awards bonus from">
+        <span data-tip="Expected goal involvement per 90">xGI {fmt(g.xgiPer90, 3)}</span>
+        <span data-tip="Defensive contribution per 90">DC {fmt(g.defconPer90, 1)}</span>
+        <span data-tip="Expected goals conceded per 90">xGC {fmt(g.xgcPer90, 2)}</span>
+        <span data-tip="Bonus points system score per 90 — the input FPL awards bonus from">
           BPS {fmt(g.bpsPer90, 1)}
         </span>
-        <span title="Points per million">{fmt(g.pointsPerMillion, 1)} pts/£m</span>
+        <span data-tip="Points per million">{fmt(g.pointsPerMillion, 1)} pts/£m</span>
       </div>
     </div>
   )

@@ -18,7 +18,7 @@ export const revalidate = 300
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div title={hint}>
+    <div data-tip={hint}>
       <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--faint)' }}>
         {label}
       </div>
@@ -272,7 +272,7 @@ export default async function TeamPage({ params }: { params: Promise<{ code: str
                             key={k}
                             className="border-b px-2 py-1.5 text-right text-[10px] font-semibold uppercase tracking-wide"
                             style={{ borderColor: 'var(--border)' }}
-                            title={COLUMNS_BY_KEY.get(k)?.full}
+                            data-tip={COLUMNS_BY_KEY.get(k)?.full}
                           >
                             {COLUMNS_BY_KEY.get(k)?.label ?? k}
                           </th>
@@ -298,7 +298,7 @@ export default async function TeamPage({ params }: { params: Promise<{ code: str
                                 <span
                                   className="text-[10px]"
                                   style={{ color: 'var(--warn)' }}
-                                  title={String(p.news ?? '')}
+                                  data-tip={String(p.news ?? '')}
                                 >
                                   ⚠
                                 </span>

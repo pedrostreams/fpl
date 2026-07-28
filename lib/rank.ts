@@ -58,10 +58,37 @@ export function rankColumn(
   key: string,
   opts: { within?: string | null } = {},
 ): (number | null)[] {
-  const col: Column | undefined = COLUMNS_BY_KEY.get(key)
-  if (!col || col.direction === 'none') return rows.map(() => null)
+  const pool = buildPool(rows, key, opts.within)
+  if (!pool) return rows.map(() => null)
+  const { groupOf, lookup } = pool
 
-  const within = opts.within === undefined ? (col.scope === 'all' ? null : 'position') : opts.within
+  return rows.map((r, i) => {
+    const n = numeric(r[key])
+    if (n === null) return null
+    return lookup.get(groupOf[i])?.get(n) ?? null
+  })
+}
+
+/** One coercion, used by every path here, so "is this a number" cannot drift between them. */
+function numeric(v: unknown): number | null {
+  if (v === null || v === undefined) return null
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+/**
+ * The comparison sets, shared by the shading and by the tooltip that describes it.
+ *
+ * Extracted rather than duplicated, and that is the whole point: the tooltip says "12th of 148
+ * midfielders" about the same number the cell shades. Two implementations of "which rows count"
+ * would eventually disagree, and a reader looking at a green cell described as median has no
+ * way to tell which of the two lied. Sharing the code makes the agreement structural.
+ */
+function buildPool(rows: Rankable[], key: string, withinOpt?: string | null) {
+  const col: Column | undefined = COLUMNS_BY_KEY.get(key)
+  if (!col || col.direction === 'none') return null
+
+  const within = withinOpt === undefined ? (col.scope === 'all' ? null : 'position') : withinOpt
 
   // Group first, so a centre-back's xGI is ranked against other centre-backs. Ranking across
   // the whole pool would put every defender in the bottom third of any attacking metric and
@@ -69,10 +96,8 @@ export function rankColumn(
   const groups = new Map<string, number[]>()
   const groupOf = rows.map((r) => (within ? String(r[within] ?? '') : ''))
   rows.forEach((r, i) => {
-    const v = r[key]
-    if (v === null || v === undefined) return
-    const n = typeof v === 'number' ? v : Number(v)
-    if (!Number.isFinite(n)) return
+    const n = numeric(r[key])
+    if (n === null) return
     const g = groupOf[i]
     const bucket = groups.get(g)
     if (bucket) bucket.push(n)
@@ -87,13 +112,49 @@ export function rankColumn(
     lookup.set(g, midRank(values))
   }
 
-  return rows.map((r, i) => {
-    const v = r[key]
-    if (v === null || v === undefined) return null
-    const n = typeof v === 'number' ? v : Number(v)
-    if (!Number.isFinite(n)) return null
-    return lookup.get(groupOf[i])?.get(n) ?? null
-  })
+  return { col, within, groups, groupOf, lookup }
+}
+
+export type RankDetail = {
+  /** Mid-rank percentile, 1 = best. The same number the cell is shaded by. */
+  percentile: number
+  /**
+   * Position from the best end, 1 = best.
+   *
+   * Derived from the percentile rather than counted separately, so the two can never disagree.
+   * A tie group therefore reports the middle of its own span — five players level on 0.00 at
+   * the bottom of a 100-row pool all read "98th", which is true of all of them and is what
+   * mid-rank means. Rounded, because half a rank is not a thing a reader can use.
+   */
+  rank: number
+  pool: number
+  /** The comparison set in words, for the sentence. Null means the whole visible table. */
+  within: string | null
+}
+
+/**
+ * Where one row sits for one column, in words the tooltip can print.
+ *
+ * Computed on demand — a hover, not a render — so the cost never touches the 8 000 cells that
+ * are merely on screen.
+ */
+export function describeRank(rows: Rankable[], key: string, row: Rankable): RankDetail | null {
+  const pool = buildPool(rows, key)
+  if (!pool) return null
+  const n = numeric(row[key])
+  if (n === null) return null
+
+  const within = pool.within ? String(row[pool.within] ?? '') : ''
+  const values = pool.groups.get(within)
+  const percentile = pool.lookup.get(within)?.get(n)
+  if (!values || percentile === undefined) return null
+
+  return {
+    percentile,
+    rank: Math.max(1, Math.round((1 - percentile) * values.length + 0.5)),
+    pool: values.length,
+    within: pool.within ? within : null,
+  }
 }
 
 /**

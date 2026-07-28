@@ -19,9 +19,10 @@ import { WatchButton } from '@/components/watch-button'
 import { COLUMNS_BY_KEY, PINNED, PRESETS } from '@/lib/columns'
 import type { Filters, Preset } from '@/lib/columns'
 import { countActive, encodeFilters, passes } from '@/lib/filters'
-import { POSITION_VAR, formatCell, statusColour } from '@/lib/format'
+import { POSITION_VAR, formatCell, ordinal, statusColour } from '@/lib/format'
 import type { SavedView, WideTable } from '@/lib/queries'
-import { rankAll } from '@/lib/rank'
+import { describeRank, rankAll } from '@/lib/rank'
+import { registerTipSource } from '@/lib/tooltip'
 
 /**
  * One table, many views.
@@ -59,12 +60,22 @@ const compare: SortingFn<Row> = (a, b, columnId) => {
 
 const POSITIONS = ['GKP', 'DEF', 'MID', 'FWD'] as const
 
-function HeatCell({ text, p, title }: { text: string; p: number | null; title?: string }) {
+/** For the tooltip's sentence. "4th of 23 MID" reads like a column header, not like English. */
+const POSITION_NOUN: Record<string, string> = {
+  GKP: 'goalkeepers',
+  DEF: 'defenders',
+  MID: 'midfielders',
+  FWD: 'forwards',
+}
+
+function HeatCell({ text, p }: { text: string; p: number | null }) {
   // No rank means unranked, which must not read as ranked-low. Hatching, per DESIGN.md's three
   // kinds of absent: em dash for no value, hatching for not ranked, and neither is a zero.
+  // No `title` on either branch: the enclosing <td> carries data-tip-c and the resolver in
+  // this file builds the content, so a native tooltip here would fight it and win.
   if (p === null) {
     return (
-      <div className="heat-null flex h-full items-center justify-end px-2 py-1.5" title={title}>
+      <div className="heat-null flex h-full items-center justify-end px-2 py-1.5">
         <span className="num" style={{ color: 'var(--faint)' }}>
           {text}
         </span>
@@ -75,7 +86,6 @@ function HeatCell({ text, p, title }: { text: string; p: number | null; title?: 
     <div
       className="heat flex h-full items-center justify-end px-2 py-1.5"
       style={{ ['--p' as string]: p }}
-      title={title ?? `${Math.round(p * 100)}th percentile`}
     >
       <span className="num">{text}</span>
     </div>
@@ -158,6 +168,85 @@ export function PlayersView({
   const ranks = useMemo(() => rankAll(visible, columns), [visible, columns])
   const rowIndex = useMemo(() => new Map(visible.map((r, i) => [r, i])), [visible])
 
+  // ---------------------------------------------------------------------------------------
+  // Tooltip content
+  // ---------------------------------------------------------------------------------------
+  // The point of the whole exercise: a cell reading 0.398 says nothing, and Peder's complaint
+  // about xGI/90 on the player page — "that number does not tell me damn shit without context
+  // to other midfielders" — is just as true of every cell in this table. So a metric cell says
+  // what the metric is, the value, where it ranks in the pool the shading actually used, and
+  // why the metric exists at all.
+  //
+  // The pool matters. Ranks here are computed over the *filtered* set, so if you narrowed to
+  // forwards under £7.0 the tooltip says "4th of 23 forwards", not 4th of 558 — the shading
+  // rescales to the question being asked and the sentence has to agree. `describeRank` shares
+  // its grouping code with `rankColumn` so it cannot say otherwise.
+  const byCode = useMemo(
+    () => new Map(visible.map((r) => [String(r.player_code), r])),
+    [visible],
+  )
+
+  useEffect(() => {
+    return registerTipSource('players', (el) => {
+      const key = el.dataset.tipC
+      const code = el.closest<HTMLElement>('[data-tip-r]')?.dataset.tipR
+      if (!key || !code) return null
+      const row = byCode.get(code)
+      const col = COLUMNS_BY_KEY.get(key)
+      if (!row || !col) return null
+
+      const name = String(row.web_name ?? '')
+      const text = formatCell(row[key], col.format)
+
+      // The identity column is not a metric. It gets the player, which is what a reader
+      // pointing at that cell is asking about.
+      if (col.format === 'text' || PINNED.includes(key)) {
+        return {
+          title: col.full,
+          value: text,
+          note: `${name} · ${String(row.team_name ?? row.team_short ?? '')} · ${String(row.position)}`,
+        }
+      }
+
+      const rows: { label: string; value: string; tone?: 'good' | 'bad' | 'muted' }[] = []
+
+      if (col.direction === 'none') {
+        // Not shaded, and saying so is the useful part — an unshaded cell in a table of
+        // shaded ones otherwise looks like missing data rather than a deliberate choice.
+        rows.push({ label: 'Ranked', value: 'not shaded', tone: 'muted' })
+      } else {
+        const d = describeRank(visible, key, row)
+        if (d) {
+          const noun =
+            d.within === null
+              ? `of ${d.pool} shown`
+              : `of ${d.pool} ${POSITION_NOUN[d.within] ?? d.within} shown`
+          rows.push({
+            label: 'Rank',
+            value: `${ordinal(d.rank)} ${noun}`,
+            tone: d.percentile >= 0.8 ? 'good' : d.percentile <= 0.2 ? 'bad' : undefined,
+          })
+          rows.push({ label: 'Percentile', value: ordinal(Math.round(d.percentile * 100)) })
+        } else {
+          // Distinguishes "no value" from "not ranked", which the hatched cell also does
+          // visually. Both are absent; they are not the same absent.
+          rows.push({
+            label: 'Rank',
+            value: row[key] === null || row[key] === undefined ? 'no value' : 'not ranked',
+            tone: 'muted',
+          })
+        }
+        rows.push({
+          label: 'Better is',
+          value: col.direction === 'lower' ? 'lower' : 'higher',
+          tone: 'muted',
+        })
+      }
+
+      return { title: col.full, value: text, note: name, rows, why: col.why }
+    })
+  }, [visible, byCode])
+
   const defs = useMemo<ColumnDef<Row>[]>(() => {
     const out: ColumnDef<Row>[] = [
       {
@@ -199,7 +288,11 @@ export function PlayersView({
       out.push({
         id: key,
         header: () => (
-          <span title={col.why ? `${col.full}. ${col.why}` : col.full}>{col.label}</span>
+          // A header is focusable-adjacent and short; static attributes are the right shape
+          // here, where the cells need a resolver.
+          <span data-tip={col.full} data-tip-why={col.why}>
+            {col.label}
+          </span>
         ),
         // undefined, not null: `sortUndefined` is the only mechanism that survives a direction
         // flip, and it does not recognise null. Display still reads row.original, so the
@@ -214,11 +307,6 @@ export function PlayersView({
             <HeatCell
               text={formatCell(row.original[key], col.format)}
               p={col.direction === 'none' ? null : p}
-              title={
-                col.direction === 'none'
-                  ? `${col.full} — not shaded${col.why ? `. ${col.why}` : ''}`
-                  : undefined
-              }
             />
           )
         },
@@ -262,7 +350,7 @@ export function PlayersView({
           <button
             key={p.key}
             onClick={() => applyPreset(p)}
-            title={p.blurb}
+            data-tip={p.blurb}
             className="h-7 rounded-lg border px-2.5 text-[11px] font-medium transition-colors"
             style={{
               background:
@@ -280,7 +368,7 @@ export function PlayersView({
           <button
             key={v.id}
             onClick={() => applySaved(v)}
-            title="Your saved view"
+            data-tip="Your saved view"
             className="h-7 rounded-lg border border-dashed px-2.5 text-[11px] font-medium transition-colors"
             style={{
               background:
@@ -443,7 +531,7 @@ export function PlayersView({
       ) : (
       /* ---- table ---- */
       <div className="overflow-x-auto rounded-xl border" style={{ background: 'var(--surface)' }}>
-        <table className="w-full border-collapse text-[12px]">
+        <table className="w-full border-collapse text-[12px]" data-tip-src="players">
           <thead>
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
@@ -463,9 +551,17 @@ export function PlayersView({
           </thead>
           <tbody>
             {table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className="border-b" style={{ borderColor: 'var(--border)' }}>
+              <tr
+                key={row.id}
+                className="border-b"
+                style={{ borderColor: 'var(--border)' }}
+                data-tip-r={String(row.original.player_code)}
+              >
                 {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="p-0 align-middle">
+                  // Two coordinates per cell and nothing else. Serialising a tooltip here would
+                  // be ~8 000 of them in the payload; the resolver registered below already has
+                  // the row, the catalogue entry and the ranks in memory.
+                  <td key={cell.id} className="p-0 align-middle" data-tip-c={cell.column.id}>
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
                 ))}
@@ -558,7 +654,7 @@ function Toggle({
   return (
     <button
       onClick={() => onChange(!on)}
-      title={hint}
+      data-tip={hint}
       className="h-7 rounded-lg border px-2 text-[11px] font-medium"
       style={{
         background: on ? 'color-mix(in oklab, var(--accent) 16%, var(--surface))' : 'var(--surface-2)',

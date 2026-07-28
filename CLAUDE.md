@@ -19,6 +19,9 @@ app (Phase 4, not built yet). Sync writes straight to Postgres via `psycopg`; th
 python scripts/probe/probe_sources.py            # health-check every source; exit = #failures
 python scripts/probe/prove_snapshot_logic.py     # insert-on-change regression, no DB needed
 python scripts/probe/prove_player_matching.py    # 44 name-matching cases, no DB needed
+# tooltip rank == cell shading, no DB needed
+node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON \
+     --import ./scripts/probe/_ts_resolve.mjs scripts/probe/prove_rank_detail.mjs
 
 python scripts/probe/calibrate_elo_fixtures.py   # refit the fixture-difficulty constants
 python scripts/migrate.py                        # apply all migrations (idempotent)
@@ -31,7 +34,10 @@ python -m sync.cli verify                        # post-sync sanity + storage gr
 ```
 
 There is no test runner. `--dry-run`, the probe scripts, and `verify` are the verification
-path. The two `prove_*` scripts run without a database or network, so they gate CI.
+path. The three `prove_*` scripts run without a database or network, so they gate CI. The
+newest is JavaScript rather than Python because it asserts on `lib/rank.ts` directly — Node
+strips the type annotations, and `scripts/probe/_ts_resolve.mjs` supplies the file extensions
+and the `@/` alias that TypeScript imports omit.
 
 **Nothing is `finished` until 2026-08-21**, so every code path keyed on an in-progress season
 is unexercised by the data. `.claude/context/FIX_WHEN_LIVE.md` is the go-live checklist — 74
@@ -233,6 +239,17 @@ the word `blank` for no fixture, and tables pass `wrap={false}` because a wrappi
 row height depend on name length. Callers supply only slots. `components/team-badge.tsx` is the
 crest, keyed on `teams.code` — **never `fpl_id`**, which is season-scoped and would repaint half
 the league the day FPL renumbers.
+
+**Never `title`. Tooltips go through `data-tip`** and the single delegated host in
+`components/tooltip-host.tsx` — full contract in DESIGN.md §7. Three reasons, and the first is
+the one that matters: `title` does not appear on keyboard focus in any browser, so every
+explanation in the app was mouse-only. It also cannot be structured, and two tooltips on one
+element means the browser draws its own over ours — so adding `data-tip` means removing `title`.
+Static text goes in attributes (and `tipRows()` builds `data-tip-rows`, which is the only way a
+**server** component gets a rich tooltip); anything with thousands of triggers registers a
+resolver via `registerTipSource` instead, because `/players` has **8 445** tagged cells and
+serialising their content would be megabytes. Two exceptions that are not bugs: `title` on an
+`<img>`, and the `title` **prop** on `Panel`/`Section`, which never reaches the DOM.
 
 Two traps this table hit, both found by rendering it and reading the result:
 

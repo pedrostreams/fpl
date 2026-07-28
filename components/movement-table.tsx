@@ -57,7 +57,7 @@ function Delta({
 }) {
   if (known === false) {
     return (
-      <span className="num text-[12px]" style={{ color: 'var(--faint)' }} title="Not enough history yet — the snapshot series does not reach back this far">
+      <span className="num text-[12px]" style={{ color: 'var(--faint)' }} data-tip="Not enough history yet — the snapshot series does not reach back this far">
         ·
       </span>
     )
@@ -187,7 +187,7 @@ export function MovementTable({ rows, covers24h }: { rows: MovementRow[]; covers
               ].map(([label, align, tip]) => (
                 <th
                   key={label}
-                  title={tip || undefined}
+                  data-tip={tip || undefined}
                   className={`sticky top-0 z-10 border-b px-2 py-2 text-[11px] font-semibold uppercase tracking-wide whitespace-nowrap text-${align}`}
                   style={{ background: 'var(--surface-2)', color: 'var(--muted)' }}
                 >
