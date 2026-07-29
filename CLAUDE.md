@@ -20,6 +20,7 @@ python scripts/probe/probe_sources.py            # health-check every source; ex
 python scripts/probe/prove_snapshot_logic.py     # insert-on-change regression, no DB needed
 python scripts/probe/prove_player_matching.py    # 44 name-matching cases, no DB needed
 python scripts/probe/prove_market_parse.py       # Norsk Tipping market parsing, no DB needed
+python scripts/probe/prove_rotation_pairs.py     # blank/double rotation scoring, no DB needed
 # tooltip rank == cell shading, no DB needed
 node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON \
      --import ./scripts/probe/_ts_resolve.mjs scripts/probe/prove_rank_detail.mjs
@@ -37,7 +38,7 @@ python -m sync.cli verify                        # post-sync sanity + storage gr
 ```
 
 There is no test runner. `--dry-run`, the probe scripts, and `verify` are the verification
-path. Four of the five `prove_*` scripts run without a database or network, so they gate CI. One
+path. Five of the six `prove_*` scripts run without a database or network, so they gate CI. One
 of those is JavaScript rather than Python because it asserts on `lib/rank.ts` directly — Node
 strips the type annotations, and `scripts/probe/_ts_resolve.mjs` supplies the file extensions
 and the `@/` alias that TypeScript imports omit. `prove_style_claims.py` is the exception that
@@ -56,8 +57,8 @@ that name is in scope. It is currently harmless because `player_seasons` holds o
 
 **`select * from <name>_check;` is how a view is verified**, and every boolean in one must be
 true. `python -m sync.cli verify` asserts every boolean in `market_odds_check`,
-`fixture_percentage_check`, `position_price_value_check`, `form_check`, `style_check` and
-`trend_check`
+`fixture_percentage_check`, `position_price_value_check`, `form_check`,
+`rotation_pairs_check`, `style_check` and `trend_check`
 wholesale, and reports NULLs rather than failing them — some are legitimately empty until the
 season starts. Two traps that made a check look like it passed when it asserted nothing:
 `bool_and` over **zero rows is NULL**, which reads as a pass in a table of booleans — so publish
