@@ -27,6 +27,7 @@ node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON \
 
 python scripts/probe/calibrate_elo_fixtures.py   # refit the fixture-difficulty constants
 python scripts/probe/prove_style_claims.py       # re-derive every style reliability, needs DB
+python scripts/probe/prove_gameweek_shape.py      # simulate a blank + double in a rolled-back txn
 python scripts/migrate.py                        # apply all migrations (idempotent)
 
 python -m sync.cli all --dry-run                 # FPL core: dimensions, history, snapshot
@@ -58,11 +59,21 @@ that name is in scope. It is currently harmless because `player_seasons` holds o
 **`select * from <name>_check;` is how a view is verified**, and every boolean in one must be
 true. `python -m sync.cli verify` asserts every boolean in `market_odds_check`,
 `fixture_percentage_check`, `position_price_value_check`, `form_check`,
-`rotation_pairs_check`, `style_check` and `trend_check`
+`rotation_pairs_check`, `rotation_risk_check`, `gameweek_shape_check`, `style_check` and
+`trend_check`
 wholesale, and reports NULLs rather than failing them — some are legitimately empty until the
 season starts. Two traps that made a check look like it passed when it asserted nothing:
 `bool_and` over **zero rows is NULL**, which reads as a pass in a table of booleans — so publish
-the row count beside any check whose `where` clause can go empty. And a check that restates the
+the row count beside any check whose `where` clause can go empty.
+
+**A check view built from N scalar subqueries scans its base view N times.** `rotation_risk_check`
+took **41.5 seconds** and the whole loop 98.6 — a `verify` that slow is one that gets skipped, and a
+check nobody runs asserts nothing. Almost every assertion in one of these views is an aggregate over
+the same rows, so it belongs in **one** aggregate over one scan: `with r as materialized (select *
+from …)` and then `bool_and(x) filter (where y)` per column. Migration 0031 did that for four views,
+98.6s → 19s, with no assertion weakened. **And time a check view with `select *`, never
+`count(*)`** — for `count(*)` the column values are never needed, so the planner discards every
+scalar subquery and reported that same 41.5s view as 0.98s. And a check that restates the
 expression it is checking proves only that SQL is deterministic; assert against an independent
 derivation, which is what `prove_style_claims.py` exists to be.
 
