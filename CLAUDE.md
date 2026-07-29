@@ -66,6 +66,12 @@ season starts. Two traps that made a check look like it passed when it asserted 
 `bool_and` over **zero rows is NULL**, which reads as a pass in a table of booleans — so publish
 the row count beside any check whose `where` clause can go empty.
 
+**A correlated `exists` against a scoring view evaluates it once per row.**
+`sell_candidates` wrote `exists (select 1 from target_players where player_code = s.player_code)`
+and took a 563-row view past a two-minute statement timeout — `target_players` is a scoring view,
+evaluated 563 times. `with targets as materialized (select distinct player_code from
+target_players)` plus a left join: 2.5s. Same shape as the check-view problem below, one level down.
+
 **A check view built from N scalar subqueries scans its base view N times.** `rotation_risk_check`
 took **41.5 seconds** and the whole loop 98.6 — a `verify` that slow is one that gets skipped, and a
 check nobody runs asserts nothing. Almost every assertion in one of these views is an aggregate over
@@ -245,6 +251,21 @@ settle. Read it before adding a screen; **update it in the same commit as any ch
 it that a code change can silently break: **colour always means better, never bigger** (invert
 "lower is better" metrics in the SQL view, never in the component), and **null must never
 render as low** (em dash, or `.heat-null` hatching for an unranked cell).
+
+**`/gw` is the order and the sentence, and that was the whole finding.**
+Reading a season of allaboutfpl, the gap was never data — on data we are ahead almost everywhere.
+Their advantage is that **every week, in a fixed order, someone answers the five questions a manager
+actually has and writes a sentence about each**, while we had the answers scattered across seven
+pages with no order and no sentence. `/gw` walks: shape of the week → buy/sell → captain →
+differentials → what next. Almost no new SQL — `sell_candidates` (0032) was the only missing half,
+because buy existed and hold is a non-action.
+
+`sell_candidates` emits **reason codes, never a blended score**: "0.71" cannot be argued with,
+"fixtures turning and his minutes falling" can, and two reasons is a stronger sell than one. Two
+rules in it are load-bearing. **A run of blanks is deliberately not a reason** — returns are far
+noisier than the underlying, and selling on a blank run is the most common mistake in the game.
+And **`rotation_risk` fires only on a measured decline**, not on competition existing: accepting
+"a real contest for the slot" flagged 38 players including one on 48.7% ownership.
 
 **`/players` is the one table, and "view" is the user's word for a saved column set — not a
 Postgres view.** `/scout` and `/gems` were the same 558 rows with different columns and

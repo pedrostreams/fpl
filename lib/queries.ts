@@ -766,6 +766,88 @@ export async function getPlayerForm(code: number): Promise<PlayerForm> {
   }
 }
 
+export type SellCandidate = {
+  playerCode: number
+  webName: string
+  position: string
+  teamCode: number | null
+  teamShort: string | null
+  price: number | null
+  selectedByPercent: number | null
+  status: string | null
+  news: string | null
+  /** Reason codes, never a blended score — the reason is the product. */
+  reasons: string[]
+  reasonCount: number
+  /** The reasons as prose, built from the same array so the two cannot drift. */
+  sellWord: string
+  /** Legitimate and surfaced rather than suppressed: cheap and in form, but his place is going. */
+  alsoATarget: boolean
+  recentMinutes: number | null
+  seasonMinutes: number | null
+}
+
+export async function getSellCandidates(limit = 8): Promise<SellCandidate[]> {
+  const rows = await query<Record<string, unknown>>(
+    `select player_code, web_name, position, team_code, team_short, price,
+            selected_by_percent, status, news, sell_reasons, reason_count, sell_word,
+            also_a_target, recent_minutes, season_minutes
+       from sell_candidates
+      order by reason_count desc, selected_by_percent desc nulls last
+      limit $1`,
+    [limit],
+  )
+  return rows.map((r) => ({
+    playerCode: Number(r.player_code),
+    webName: String(r.web_name ?? ''),
+    position: String(r.position ?? ''),
+    teamCode: r.team_code === null ? null : Number(r.team_code),
+    teamShort: (r.team_short as string) ?? null,
+    price: num(r.price),
+    selectedByPercent: num(r.selected_by_percent),
+    status: (r.status as string) ?? null,
+    news: (r.news as string) ?? null,
+    reasons: (r.sell_reasons as string[]) ?? [],
+    reasonCount: Number(r.reason_count ?? 0),
+    sellWord: String(r.sell_word ?? ''),
+    alsoATarget: Boolean(r.also_a_target),
+    recentMinutes: num(r.recent_minutes),
+    seasonMinutes: num(r.season_minutes),
+  }))
+}
+
+export type GameweekShape = {
+  event: number
+  blanking: number
+  doubling: number
+  provisional: number
+  clubFixtures: number
+  shapeWord: string
+  blankingClubs: string | null
+  doublingClubs: string | null
+}
+
+export async function getGameweekShape(from: number, count = 6): Promise<GameweekShape[]> {
+  const rows = await query<Record<string, unknown>>(
+    `select event, blanking, doubling, provisional, club_fixtures, shape_word,
+            blanking_clubs, doubling_clubs
+       from gameweek_shape_summary
+      where event between $1 and $1 + $2 - 1
+      order by event`,
+    [from, count],
+  )
+  return rows.map((r) => ({
+    event: Number(r.event),
+    blanking: Number(r.blanking ?? 0),
+    doubling: Number(r.doubling ?? 0),
+    provisional: Number(r.provisional ?? 0),
+    clubFixtures: Number(r.club_fixtures ?? 0),
+    shapeWord: String(r.shape_word ?? ''),
+    blankingClubs: (r.blanking_clubs as string) ?? null,
+    doublingClubs: (r.doubling_clubs as string) ?? null,
+  }))
+}
+
 export type PriceBandValue = {
   position: string
   priceBand: string

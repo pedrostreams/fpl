@@ -601,7 +601,8 @@ def run(
         for view in ("market_odds_check", "fixture_percentage_check",
                      "position_price_value_check", "form_check",
                      "rotation_pairs_check", "rotation_risk_check",
-                     "gameweek_shape_check", "style_check", "trend_check"):
+                     "gameweek_shape_check", "sell_check",
+                     "style_check", "trend_check"):
             rows = db.fetch(conn, f"select * from {view}")
             if not rows:
                 problems.append(f"{view}: returned no rows at all")

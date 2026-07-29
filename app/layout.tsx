@@ -15,6 +15,9 @@ export const metadata: Metadata = {
 
 const NAV = [
   { href: '/', label: 'Dashboard' },
+  // Second, deliberately. It is the page that answers the week in order, and the one to open on a
+  // Friday — the dashboard is the state of the data, this is the decision.
+  { href: '/gw', label: 'Gameweek' },
   { href: '/players', label: 'Players' },
   { href: '/gems', label: 'Hidden gems' },
   { href: '/teams', label: 'Teams' },

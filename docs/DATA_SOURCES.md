@@ -583,6 +583,9 @@ Which source answers each thing you asked for:
 | **Whose defenders and target men are worth owning** | **Understat `situation` → dead-ball share of npxG** (`team_style_metric`) | corner/set-piece/free-kick xG in `team_dead_ball` |
 | **How much to trust any of the above** | **`team_style_reliability`** — the variance decomposition, recomputed, never a stored constant | `prove_style_claims.py` re-derives it in Python |
 | **Which price bracket actually returns** | **`position_price_value`** — points per £m of *start* cost, by position × band, recomputed per read | `history_past` only, so departed players are absent and every level is an upper bound |
+| **What do I change this week** | **`sell_candidates`** — reason codes, never a score; a blank run is deliberately *not* one | `target_players` for the buy half, and the conflict between them is shown rather than resolved |
+| **Is he exposed to being rotated** | **`rotation_risk`** + `squad_competition` — same club, same position, comparable minutes | `tournament` per match for recent midweek load; no press-conference text, ever |
+| **Blanks and doubles** | **`gameweek_shape`** — confirmed, flat, or **provisional** where cup rounds are undrawn | Reports a flat season today; the value is being ready when the first round is drawn |
 | Fixture difficulty (better than FDR) | **ClubElo**, via the fitted model in migration 0007 | football-data.co.uk odds as the *calibration target*, FPL `difficulty` for comparison |
 | **This gameweek's fixture, with team news in it** | **Norsk Tipping `market_odds`** — a price for an *unplayed* match, which no other source here gives | Elo beyond the ~1-gameweek horizon; `basis` says which is which |
 | **Is the Elo model still right?** | **Norsk Tipping `p_home` vs `fixture_difficulty.p_win`** on unplayed fixtures, weekly from GW1 | football-data's played-match fit (a season in arrears) |
