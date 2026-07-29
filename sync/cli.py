@@ -36,7 +36,7 @@ from .fpl import FplClient
 # job can only be broken by its own imports.
 JOBS = (
     "dimensions", "snapshot", "history", "understat", "core_insights",
-    "clubelo", "odds", "manager", "verify",
+    "clubelo", "odds", "market_odds", "manager", "verify",
 )
 
 
@@ -45,10 +45,12 @@ def job_runner(name: str):
     return import_module(f".jobs.{name}", package=__package__).run
 
 # Jobs that accept --season.
-SEASON_JOBS = ("understat", "odds", "core_insights")
+SEASON_JOBS = ("understat", "odds", "market_odds", "core_insights")
 
 # The daily enrichment set, for `python -m sync.cli enrich`.
-ENRICH = ["understat", "core_insights", "clubelo", "odds"]
+# `market_odds` runs here AND more often than daily: Norsk Tipping keeps no history, so an
+# uncaptured price is gone permanently, and the deep markets only open ~15h before kickoff.
+ENRICH = ["understat", "core_insights", "clubelo", "odds", "market_odds"]
 
 
 def _print(job: str, detail: dict[str, Any]) -> None:

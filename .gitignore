@@ -27,3 +27,6 @@ next-env.d.ts
 Thumbs.db
 
 .vercel
+
+# PRD working files — rough living plans, not shipped docs
+.claude/local/

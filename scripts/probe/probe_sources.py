@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import sys
 import traceback
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -247,6 +248,39 @@ def check_football_data_couk() -> None:
             bad(f"football-data.co.uk {season}"); trace()
 
 
+def check_norsk_tipping() -> None:
+    hdr("Norsk Tipping (Oddsen) — api.norsk-tipping.no (Tier 2, forward-looking odds)")
+    from sync.sources.norsk_tipping import NorskTipping
+
+    try:
+        nt = NorskTipping()
+        today = date.today()
+        events = nt.events(today, today + timedelta(days=60))
+        if not events:
+            # No PL fixture inside the horizon. Expected between gameweeks and for most of
+            # the preseason — the same shape as 2627/E0.csv 404ing, and not a failure.
+            print("      no Premier League events in the next 60 days (expected off-season)")
+            return
+
+        depth = {}
+        for e in events[:3]:
+            depth[e.get("eventName")] = len(nt.markets(str(e.get("eventId"))))
+        deepest = max(depth.values(), default=0)
+        ok(f"tournament 35887: {len(events)} events | markets on first 3: {depth}")
+
+        # The prize is the 46-market set: team totals and `holder nullen`. It opens ~15h
+        # before kickoff and the PL's depth is unmeasured until 2026-08-21 — see
+        # FIX_WHEN_LIVE. HUB alone is the expected answer outside that window, so this
+        # prints rather than fails.
+        if deepest <= 1:
+            print("      HUB only — deep markets not open yet (expected outside ~15h)")
+        else:
+            names = [m.get("marketName") for m in nt.markets(str(events[0].get("eventId")))]
+            print(f"      DEEP SET OPEN ({deepest} markets): {names}")
+    except Exception:
+        bad("norsk-tipping"); trace()
+
+
 # --------------------------------------------------------------------------- #
 # Tier 3
 # --------------------------------------------------------------------------- #
@@ -312,6 +346,7 @@ CHECKS = {
     "sofascore": check_sofascore,
     "clubelo": check_clubelo,
     "odds": check_football_data_couk,
+    "norsktipping": check_norsk_tipping,
     "coreinsights": check_fpl_core_insights,
 }
 

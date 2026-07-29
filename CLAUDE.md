@@ -19,6 +19,7 @@ app (Phase 4, not built yet). Sync writes straight to Postgres via `psycopg`; th
 python scripts/probe/probe_sources.py            # health-check every source; exit = #failures
 python scripts/probe/prove_snapshot_logic.py     # insert-on-change regression, no DB needed
 python scripts/probe/prove_player_matching.py    # 44 name-matching cases, no DB needed
+python scripts/probe/prove_market_parse.py       # Norsk Tipping market parsing, no DB needed
 # tooltip rank == cell shading, no DB needed
 node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON \
      --import ./scripts/probe/_ts_resolve.mjs scripts/probe/prove_rank_detail.mjs
@@ -29,13 +30,14 @@ python scripts/migrate.py                        # apply all migrations (idempot
 
 python -m sync.cli all --dry-run                 # FPL core: dimensions, history, snapshot
 python -m sync.cli snapshot                      # the hourly job
-python -m sync.cli enrich                        # Tier 2: understat, core_insights, clubelo, odds
+python -m sync.cli enrich                        # Tier 2: understat, core_insights, clubelo, odds, market_odds
+python -m sync.cli market_odds --dry-run         # Norsk Tipping; runs 2-hourly on its own clock
 python -m sync.cli understat --rematch           # re-resolve identities from scratch
 python -m sync.cli verify                        # post-sync sanity + storage growth
 ```
 
 There is no test runner. `--dry-run`, the probe scripts, and `verify` are the verification
-path. Three of the four `prove_*` scripts run without a database or network, so they gate CI. One
+path. Four of the five `prove_*` scripts run without a database or network, so they gate CI. One
 of those is JavaScript rather than Python because it asserts on `lib/rank.ts` directly — Node
 strips the type annotations, and `scripts/probe/_ts_resolve.mjs` supplies the file extensions
 and the `@/` alias that TypeScript imports omit. `prove_style_claims.py` is the exception that
@@ -315,6 +317,14 @@ Short version:
 - **football-data.co.uk** — Tier 2. De-vigged closing odds. **Retrospective only**: `E0.csv`
   contains nothing but played matches, so it cannot price a future fixture. It serves as the
   *calibration target* for the Elo model instead — see `docs/DATA_SOURCES.md` §3.4.
+- **Norsk Tipping (Oddsen)** — Tier 2, **no API key**, and the only source here that prices an
+  *unplayed* fixture. `market_odds` (migration 0023) is **append-on-change** so price drift
+  survives; liveness therefore comes from `sync_runs`, never `max(fetched_at)`, exactly as with
+  `player_snapshots`. Two traps: the events window accepts **whole days only** — a `from` of
+  `0001` or `1200` returns **204 for a window holding 135 events**, so 204 means both "empty"
+  and "malformed", which is why the client takes `date` rather than `datetime`. And **market
+  depth is per competition**: the Premier League's is unmeasured until 19–20 August because no
+  PL fixture falls inside the ~15h deep-market window before then. Details in §3.5.
 - **FBref — do not use.** Lost its Opta licence January 2026; advanced data deleted. A
   second loss after the StatsBomb termination. Basic stats and historical archive only.
 - **Sportmonks — not used here.** The FPL API already supplies Opta xG.

@@ -43,7 +43,28 @@ will have happened in between.
       then `select collect_dispatch_results();` → `status_code = 204`. Renew with
       `vault.update_secret`. If it has lapsed, the 3-hourly GitHub backstop is all that has
       been running, at ~36% delivery.
-- [ ] `select jobname, schedule, active from cron.job;` → all three active. A Supabase project
+- [ ] **Probe Norsk Tipping's Premier League market depth — 19–20 August, and this one decides
+      the scope of two features.** `python scripts/probe/probe_sources.py norsktipping` and read
+      the market list. Depth is per *competition*, not per lead time: Conference League
+      qualifiers 4h out carried 8 markets while Brasil Serie A at 12h carried 46, and **no PL
+      fixture falls inside the ~15h deep window before 21 August**, so this cannot be settled
+      earlier. If `{Team} Totalt 0.5/1.5` and `{Team} holder nullen` appear, F4's three
+      percentage columns become market-priced for the current gameweek and `holder nullen`
+      replaces `exp(−λ_against)` for every goalkeeper and defender. If only HUB opens, we keep
+      the Elo model and the ingest still earns its keep on 1X2 drift. Either way, `market_odds.
+      markets` stores every market verbatim, so a name we failed to recognise costs a recogniser
+      and not a re-fetch — and `prove_market_parse.py` has already ruled out the parser
+- [ ] **Norsk Tipping capture is unbroken through the month.** `select count(*),
+      count(distinct external_event_id), max(fetched_at) from market_odds;` — **there is no
+      history endpoint, so a gap here is permanent**, exactly like `player_snapshots`. Note the
+      liveness trap: append-on-change means a frozen market writes no rows, so read `sync_runs`
+      for the job's health and never `max(fetched_at)`
+- [ ] `select * from market_odds_check;` → every boolean true. Most are gated on markets that do
+      not open until ~15h before kickoff, so **read the `*_rows` counts beside them**: on
+      2026-07-29 `with_team_totals_rows` and `cs_cross_check_rows` were both 0, which makes those
+      two booleans vacuous. `clean_sheet_agrees_with_scores` is the one worth waiting for — it
+      cross-checks two separately-priced markets against each other
+- [ ] `select jobname, schedule, active from cron.job;` → all five active. A Supabase project
       that pauses (7 days idle on the free tier) stops pg_cron with it; hourly traffic should
       prevent that, but check rather than assume.
 - [ ] Actions minutes: `select * from workflow_dispatch_load;` projects ~1020/month from
@@ -53,7 +74,7 @@ will have happened in between.
       the price window.**
 - [ ] Storage still well under 500 MB — `verify` prints the total
 - [ ] `python scripts/probe/probe_sources.py` → only Sofascore BLOCKED, nothing FAILED
-- [ ] All four workflows still enabled in the Actions tab (GitHub disables schedules after 60
+- [ ] All five workflows still enabled in the Actions tab (GitHub disables schedules after 60
       days of repo inactivity)
 - [ ] `/prices` shows ownership drift with real spread by now, and the 24h/7d cards read
       **Ready**
@@ -158,26 +179,44 @@ duplicate or delete a `fixtures` row inside a transaction, render, roll back.
 - [ ] **DEFCON per-match hit rate** — the biggest analytical gap. Per-90 averages hide
       consistency: a player at 9.8/90 who clears 10 most weeks is worth more than one at 11.0
       driven by two outliers. Thresholds are 10 for defenders, 12 for midfielders and forwards
-      (`element_types.defcon_threshold`). Build from `player_gw_stats` and add it to `/scout`
+      (`element_types.defcon_threshold`). ~~Build from `player_gw_stats`~~ — **not blocked, and
+      this item was in the wrong section. Measured 2026-07-29: `core_insights_player_match.stats`
+      already carries per-match `clearances`, `blocks`, `interceptions`, `tackles` and
+      `recoveries` for 11 168 of 11 168 appearances, zero empty.** The 2025/26 hit rate on 60+
+      minute league appearances is **DEF 24.1%, MID 13.7%, FWD 0.2%** — so DEFCON is irrelevant
+      for forwards, and keepers must be excluded (FPL awards them none; a CBIT count for a
+      keeper is an artifact). It is also the *most* reliable six-match signal measured,
+      `rel(6) = 0.65` for defenders, beating every attacking metric. Built in F7/F8
 - [ ] Reliability floor makes sense again — enough minutes accrued that percentiles mean
       something
-- [ ] **Switch the captain model to a rolling six-gameweek window.** `player_shot_profile` and
-      `captain_picks` are whole-season today because `player_gw_stats` is empty; the `basis`
-      column reads `'season'` and should become `'last_6_gameweeks'`. Recency is the one thing
-      allaboutfpl's method has that ours does not — everything else from that article is in.
+- [ ] **Switch the captain model to a rolling six-gameweek window.** ~~`player_shot_profile` and
+      `captain_picks` are whole-season today because `player_gw_stats` is empty~~ — **wrong, and
+      corrected 2026-07-29.** The window needs no FPL per-match data at all:
+      `core_insights_player_match` holds per-match shots, box touches, xG, xA and minutes for all
+      38 gameweeks of 2025/26, on one table, with no cross-source join. Built in F7 as
+      `basis = 'last_6_2025_26'`. **Two measured constraints that came with it:** rank on box
+      touches (`rel(6)` 0.55/0.71/0.54 for DEF/MID/FWD) rather than big chances (0.11/0.15/0.25 —
+      a rare-event count, mostly noise over six matches), and compute every percentile **within
+      position**, because pooling inflates `rel(6)` by about half. Filter `tournament='prem'` or
+      the window silently mixes in European and cup matches — 2 251 of 12 242 rows.
 - [ ] **Replace `minutes_security` with a real minutes model.** Starts-per-appearance is a
       preseason stand-in, and `cume_dist` puts every full-time starter at 1.000, so the component
-      currently discriminates almost nothing. Per-match minutes from `player_gw_stats` would give
-      it teeth — rotation risk is where captaincy is actually lost.
+      currently discriminates almost nothing. ~~Per-match minutes from `player_gw_stats`~~ —
+      **also already available** in `core_insights_player_match`, and minutes turn out to be the
+      second most reliable six-match signal measured (`rel(6)` 0.63–0.79). So the weakest term in
+      any projection has a much better estimator available today than the one in place.
 - [ ] **Confirm the soccerdata enum repair still fires.** `verify` fails if `situation` or
       `body_part` goes NULL, but check `shot_attribute_repair` in the understat job output:
       `situation_filled` should be ~92 per season and `body_part_filled` ~1 800. If both drop to
       0 *and* no NULLs appear, soccerdata has fixed its mapping and the repair is a harmless
       no-op. If both drop to 0 *and* NULLs appear, the raw cache layout changed.
-- [ ] **Validate, do not refit, the Elo model.** Once `2627/E0.csv` exists, compare
-      `fixture_difficulty.p_win` against the new season's de-vigged odds and confirm the
-      Spearman is still ~0.92. `calibrate_elo_fixtures.py` refuses to refit under 100 matches
-      (~GW10) by design, and 30 matches would be worse than last season's 272
+- [ ] **Validate, do not refit, the Elo model.** ~~Once `2627/E0.csv` exists~~ — **no longer
+      blocked on that, from GW1.** football-data publishes only played matches, which is why this
+      waited; Norsk Tipping prices *unplayed* ones, so `fixture_difficulty.p_win` can be compared
+      against `market_odds.p_home` on ten fixtures a week, continuously, from the first gameweek.
+      Track the Spearman weekly rather than once. `2627/E0.csv` remains the *refit* source —
+      `calibrate_elo_fixtures.py` refuses under 100 matches (~GW10) by design, and 30 matches
+      would be worse than last season's 272 — but validation no longer has to wait for it
 - [ ] Physical data coverage — was 144 of 12 242 rows (1.2%) and behind `nullif`. Recheck
       before building anything on it
 - [ ] **Move the target minutes floor onto this season.** `player_target_base` gates at 25% of

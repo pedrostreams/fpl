@@ -398,9 +398,92 @@ against the 272 matches where we hold both these de-vigged probabilities and eac
 on the day. See `scripts/probe/calibrate_elo_fixtures.py`. So the market still sets the
 numbers; it just does so a season in arrears.
 
-A live-odds source for upcoming fixtures would be a genuine upgrade and remains unsolved on
-free terms. football-data.co.uk publishes a cross-league `fixtures.csv` covering roughly the
-next week, which would sharpen the imminent gameweek but not a six-week ticker.
+~~A live-odds source for upcoming fixtures would be a genuine upgrade and remains unsolved on
+free terms.~~ **Solved 2026-07-29 — see §3.5.** The claim was wrong in the way a limit assumed
+from the tool at hand usually is: it generalised from the one odds source in the repo to "free
+forward-looking odds do not exist". Norsk Tipping serves them without a key.
+
+---
+
+### 3.5 Norsk Tipping (Oddsen) — the only source that prices an *unplayed* fixture
+
+`https://api.norsk-tipping.no/OddsenGameInfo/v1/api`, **no API key**. The only header that
+matters is `Accept: application/json;charset=utf-8`. Carried over from `../vm26`, which reads
+the same endpoint for the World Cup.
+
+```
+GET /events/FBL/{fromYYYYMMDD}0000/{toYYYYMMDD}2359   -> events, each with its mainMarket
+GET /markets/{eventId}                                -> every market currently OPEN
+```
+
+**Premier League is tournament `35887`.** The Community Shield is `37442` and is deliberately
+excluded — not an FPL fixture, and it would resolve to two Premier League clubs.
+
+Two paths matter and the rest 403. `events/{eventId}` and `livedata/{eventId}` return 204 for a
+non-live match. vm26 reads only `mainMarket` off the event list; `markets/{eventId}` is the one
+carrying team totals and clean sheets.
+
+**Measured 2026-07-29:**
+
+| What | Result |
+|---|---|
+| GW1 fixtures priced | **9 of 10.** Fulham v Chelsea, the Monday game, is not posted at all |
+| Markets per event | **1 (HUB)**. The deep set opens ~15h before kickoff |
+| Lead time | Arsenal v Coventry's HUB opened `betStart = 2026-06-21` — two months ahead |
+| Club names | English (`Brighton and Hove Albion`, `Nottingham Forest`). The existing `TeamResolver` resolves **all 20 with no new aliases** — verified, not assumed |
+| History | **None.** Any window ending before today returns 204 |
+| Horizon | Roughly one gameweek. GW2 is not posted |
+
+**Three gotchas, each of which cost a debugging cycle or would have.**
+
+1. **The window accepts whole days only, and 204 is overloaded.** The path *looks* like
+   `YYYYMMDDHHmm`, but only `0000` for `from` and `2359` for `to` return data. `202607290001`
+   and `202607291200` both answer **204** for a window holding 135 events, as does a `to` of
+   `2300`. So 204 means both "nothing in range" and "your range was malformed", and passing
+   `datetime.now()` straight through returned 0 events from a window with 9 Premier League
+   fixtures. `sync/sources/norsk_tipping.py` takes `date`, not `datetime`, so the mistake is
+   structurally unavailable rather than merely documented.
+2. **Market depth is per competition, not per lead time, and the PL's is unmeasured.**
+   Conference and Champions League qualifiers 4–30h out carried **8** markets with no team
+   totals, while Brasil Serie A at 12–15h carried **46** and Argentine Primera **22**. No PL
+   fixture falls inside the deep window before 21 August, so whether the PL gets the 46-market
+   set **cannot be established today**. A priori it should — the PL is Norsk Tipping's largest
+   football product — but that is an expectation. `FIX_WHEN_LIVE.md` holds the 19–20 August
+   probe that settles it, and it decides how much of this section survives.
+3. **Incomplete coverage of a priced gameweek is the expected state.** One of ten GW1 fixtures
+   is simply absent. Unmatched events are logged to `unmatched_names` and **never fatal** —
+   vm26's rule, and the right one: odds are decision support, not scoring.
+
+**What the deep set is worth, if it appears.** Three of its markets are numbers this repo
+currently models rather than prices:
+
+- `{Team} Totalt 0.5` over → **P(team scores 1+)**, allaboutfpl's `% 1+ Goal`
+- `{Team} Totalt 1.5` over → **P(team scores 2+)**, their `% 2+ Goals`
+- `{Team} holder nullen` → **P(clean sheet)**, which `fixture_difficulty` supplies as
+  `exp(−λ_against)` from a two-parameter Elo model. A market price with the centre-back's
+  suspension already in it is a different quality of number, and clean sheets decide every
+  goalkeeper and defender — half the squad.
+- `Korrekt resultat` gives the full scoreline distribution, from which the rest is exact.
+
+**This complements `fixture_difficulty` and does not replace it.** The horizon is one gameweek,
+so: **this gameweek → market** (team news priced in), **next 2–6 gameweeks → Elo** (the only
+thing that reaches that far, and the only team metric covering promoted clubs). Label which is
+which on screen.
+
+**It also unblocks a checklist item rather than adding one.** Validating the Elo model was
+deferred to "once `2627/E0.csv` exists (~GW10)" because football-data publishes only played
+matches. Norsk Tipping prices *unplayed* ones, so `p_win` can be tracked against a live market
+from GW1 — ten fixtures a week, continuously. A one-off calibration becomes a monitored one.
+
+Lands in `market_odds` (migration 0023), **append-on-change** keyed
+`(source, external_event_id, fetched_at)` so price drift is preserved rather than upserted away.
+Ingest derives nothing — the λ-inversion from de-vigged 1X2 + O/U + BTTS is modelling and
+belongs in the derived-views layer, the same rule `sync/jobs/odds.py` states for clean sheets.
+`scripts/probe/prove_market_parse.py` asserts the parser against the deep-market names without a
+network, so if August brings unfamiliar names we know the parser is not the problem.
+
+We store **derived probabilities**, never betting links or prices as an invitation to bet. This
+is a football-analysis tool for a friend group and stays one.
 
 ---
 
@@ -499,6 +582,8 @@ Which source answers each thing you asked for:
 | **Whose defenders and target men are worth owning** | **Understat `situation` → dead-ball share of npxG** (`team_style_metric`) | corner/set-piece/free-kick xG in `team_dead_ball` |
 | **How much to trust any of the above** | **`team_style_reliability`** — the variance decomposition, recomputed, never a stored constant | `prove_style_claims.py` re-derives it in Python |
 | Fixture difficulty (better than FDR) | **ClubElo**, via the fitted model in migration 0007 | football-data.co.uk odds as the *calibration target*, FPL `difficulty` for comparison |
+| **This gameweek's fixture, with team news in it** | **Norsk Tipping `market_odds`** — a price for an *unplayed* match, which no other source here gives | Elo beyond the ~1-gameweek horizon; `basis` says which is which |
+| **Is the Elo model still right?** | **Norsk Tipping `p_home` vs `fixture_difficulty.p_win`** on unplayed fixtures, weekly from GW1 | football-data's played-match fit (a season in arrears) |
 | Who reliably hits the DEFCON threshold | FPL `defensive_contribution_per_90` + components | Sofascore `tackles`/`interceptions`/`clearances` |
 | Set-piece and penalty threat | FPL `penalties_order` / `*_freekicks_order` / corners | Understat `situation` on shot events |
 | Rotation and European-fixture risk | FPL `starts_per_90`, `status`, `news` | FPL-Core-Insights cup/Euro coverage |

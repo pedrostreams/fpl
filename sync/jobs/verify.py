@@ -589,6 +589,31 @@ def run(
                     f"pairs put over 30% of their pool in the top 10% — ties are inflating "
                     f"percentiles again")
 
+        # Check views verified wholesale: every boolean must be true, whatever it is called.
+        # The named blocks above explain *why* a specific flag matters and stay as they are;
+        # this catches the rest, and catches a newly added boolean without an edit here.
+        #
+        # NULL is reported rather than failed, deliberately. `bool_and` over zero rows is NULL
+        # and reads as a pass in a table of booleans, so it must be visible — but some are
+        # legitimately empty until the season starts (`trend_check` has one by design, with its
+        # row count published beside it), and failing on those would make `verify` red for a
+        # month for no reason.
+        for view in ("market_odds_check", "style_check", "trend_check"):
+            rows = db.fetch(conn, f"select * from {view}")
+            if not rows:
+                problems.append(f"{view}: returned no rows at all")
+                continue
+            q = rows[0]
+            false_flags = [k for k, v in q.items() if v is False]
+            null_flags = [k for k, v in q.items() if v is None]
+            if false_flags:
+                problems.append(f"{view}: false — {', '.join(false_flags)}")
+            print(f"\n=== {view} ===")
+            print(f"    {len(q)} columns, {len(false_flags)} false, {len(null_flags)} null")
+            if null_flags:
+                print(f"    null (asserts nothing — confirm the row count beside it): "
+                      f"{', '.join(null_flags)}")
+
         gems = db.fetch(conn, """
             select position, count(*) as n, round(avg(gem_score), 3) as avg_score,
                    round(max(gem_score), 3) as best,

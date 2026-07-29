@@ -1,0 +1,55 @@
+name: sync-market-odds
+
+# Forward-looking market odds from Norsk Tipping. Its own workflow rather than a step in
+# sync-enrich for two reasons:
+#
+#   1. **Cadence.** Norsk Tipping keeps no history — any window ending before today returns
+#      204 — so an uncaptured price is gone permanently. It also opens its deep market set
+#      (team totals, `holder nullen`) only ~15h before kickoff. A daily 07:19 enrich run would
+#      miss most of that window and all of the deadline-hour drift. This runs every two hours.
+#   2. **Weight.** sync-enrich takes up to 30 minutes because it scrapes a season of Understat
+#      shots. This job is one API call plus one per event, and it should not wait behind that.
+#
+# Dependencies are the minimum, deliberately: `curl_cffi` (the API is fine with plain requests
+# but the rest of sync/sources standardises on it) and psycopg. NOT soccerdata or pandas —
+# installing them would add minutes to a job that runs twelve times a day. This mirrors why
+# sync-snapshot installs its own two packages instead of requirements.txt.
+#
+# The clock is pg_cron via dispatch_workflow (migration 0024), not the `schedule:` block
+# below — GitHub delivered 12 of 33 scheduled runs in a measured 24 hours. `schedule:` here is
+# a sparse backstop for the case where the dispatch token lapses.
+
+on:
+  schedule:
+    - cron: '41 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Fetch and transform without writing'
+        type: boolean
+        default: false
+
+concurrency:
+  group: sync-market-odds
+  cancel-in-progress: false
+
+jobs:
+  market-odds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - run: pip install "psycopg[binary]>=3.2" "requests>=2.32" "curl_cffi>=0.15"
+
+      - name: Capture market odds
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python -m sync.cli market_odds \
+            ${{ inputs.dry_run && '--dry-run' || '' }}
