@@ -1,227 +1,262 @@
-# Trend claims — "target Brentford now, because…"
+# Playing style, and the small trend layer that rides along
 
-**Status:** designed, measured, not yet built. Scope agreed 2026-07-28: the engine plus club-level
-claims, strict threshold.
+**Status:** designed and measured, not built. Scope agreed 2026-07-29: style first, trend reduced
+to what a window can actually detect.
 
 `docs/LATER.md` item 2, in Peder's words:
 
 > More "analysis explanation". You should target Brentford now because their current trend is that
 > they are not conceding shots. They have started season well etc.
 
-The app currently states facts and ranks them. It does not say *why now*. This is the layer that
-does — and the measurements below changed what that layer is allowed to be.
+This document was first written as a trend engine. **The measurements killed most of it**, and
+Peder's own counter-proposal — a richer style section on the club page — turned out to be the
+better feature by a wide margin. What follows is the reasoning, including the two places where my
+first answer was wrong, because a future reader needs to know which claims were re-derived.
 
 ---
 
-## 1. The measurement that shaped the design
+## 1. Why a rolling window cannot carry this
 
-Prose carries far more authority than a shaded cell. "They have stopped conceding" reads as a
-conclusion; `1.42` reads as a number the reader can weigh. So before writing any of it: **is a
-rolling window signal at all?**
+Prose carries authority a shaded cell does not. "They have stopped conceding" reads as a
+conclusion; `1.42` reads as a number the reader can weigh. So the first question was whether a
+rolling window is signal at all.
 
-**Method.** Per club, per metric, per window length: shuffle that club's own 38 matches 20 000–
-40 000 times and take the mean of a random N. That distribution *is* what "no trend" looks like
-for this club and this metric. Two-sided p is how often a random window is at least as far from
-the season mean as the actual last N.
+**Test.** Per club, per metric, per window length: shuffle that club's own 38 matches 20 000–
+40 000 times and take the mean of a random N. That distribution *is* what "no trend" looks like.
+Two-sided p is how often a random window falls at least as far from the season mean as the actual
+last N.
 
-**Result.** 4 metrics × 17 clubs × 4 windows = 272 tests. **23 reached p < 0.05 — 8.5%.** At
-α = 0.05, pure noise produces 5.0% by construction.
+**Result.** 4 metrics × 17 clubs × 4 windows = 272 tests. **23 reached p < 0.05 — 8.5%**, where
+noise gives 5.0% by construction. Requiring the effect at 2+ window lengths (adjacent windows
+share most of their matches, so a real effect persists and a fluke does not) leaves **8 of 102
+club-metric pairs, spread over 6 of 17 clubs**.
 
-That is close to nothing. A naive implementation — one trend sentence per club — would be a
-confident random-number generator.
+### Does it improve once the season starts? No — measured
 
-### What survives
+The obvious hope: today's test asks whether the last 6 differ from the 38 that *contain* them,
+which drags the two together. From September the question changes shape — this season's first N
+against last season, an independent baseline.
 
-Requiring the effect to hold at **two or more window lengths** is a cheap robustness rule with a
-real mechanism behind it: adjacent windows share most of their matches, so a genuine effect
-persists across N while a fluke rarely does. Under that rule, **8 of 102 club-metric pairs**
-survive (6 metrics × 17 clubs, 40 000 permutations each):
+Simulated by splitting 2025/26: each club's first N against the remaining 38−N, Welch's t.
+**6 pairs over 5 clubs** hold at 2+ windows, against 8 pairs over 6 clubs for the current shape.
+Not better. Marginally worse.
 
-| Club | Metric | Season | Last 6 | z (N=6) | Opponent Elo gap | Reading |
-|---|---|---|---|---|---|---|
-| **BHA** | deep completions created | 7.11 | 10.00 | +2.59 | −21 | 4 of 4 windows — strongest in the set |
-| **MCI** | deep completions created | 10.76 | 14.83 | +2.63 | +10 | 3 of 4 |
-| **MCI** | shots taken | 15.61 | 19.67 | +2.17 | +10 | 3 of 4 |
-| **TOT** | deep completions conceded | 6.76 | 2.83 | −2.25 | −8 | 3 of 4, normal opposition |
-| **CRY** | deep completions conceded | 6.11 | 9.17 | +2.70 | **+62** | Collapse, against harder opposition |
-| **CRY** | expected goals conceded | 1.58 | 2.21 | +2.02 | **+62** | Same |
-| **MUN** | deep completions conceded | 7.00 | 9.50 | +1.98 | −12 | 2 of 4 |
-| **MUN** | shots conceded | 11.63 | 14.17 | +1.66 | −12 | 2 of 4 at other N |
-| CHE | expected goals for | 1.90 | 1.06 | −2.17 | −12 | 2 of 4 |
+The reason is in §3: an independent baseline does nothing about the variance of the 6-match mean
+itself, which is where the noise lives.
 
-**Nine clubs of seventeen have no defensible trend on any of six metrics.** That is the feature's
-most important output. A screen that says nothing about Everton is worth more than one that
-invents something.
+### What a 6-match window *can* detect
 
-### The confound: was the run just easier?
+Everything that survived is a near-doubling:
 
-A club whose last six were against the bottom six will look like it stopped conceding.
-`club_elo` is a **dated** series, so opponent strength on the day is available as a control. It
-matters in both directions:
+| Club | Metric | First 6 | Rest of season |
+|---|---|---|---|
+| AVL | expected goals for | 0.86 | 1.59 |
+| NEW | expected goals conceded | 0.77 | 1.65 |
+| SUN | deep completions created | 3.17 | 6.03 |
 
-- **CRY** conceded far more against opposition **62 Elo stronger** than their season average. The
-  control *strengthens* the claim rather than explaining it away.
-- **TOT** improved against opposition 8 Elo weaker — i.e. normal. Their collapse in deep
-  completions conceded (6.8 → 2.8) is not a fixture artefact.
-
-Any claim that survives on an easier-than-usual run must be discounted, and the threshold is
-±40 Elo — the league spans roughly 500 points, so 40 is a real difference rather than rounding.
+**A window resolves changes of roughly ±50% and nothing subtler.** That is an information limit,
+not an implementation weakness.
 
 ### Peder's own example, checked
 
-Brentford ended 2025/26 conceding **more**, not less:
-
-| | Season | Last 6 |
-|---|---|---|
-| Shots conceded | 13.2 | **16.7** |
-| Expected goals conceded | 1.56 | **2.10** |
-| Deep completions conceded | 7.3 | **10.0** |
-
-…against opposition 25 Elo *stronger*. The example was illustrative rather than a claim about
-Brentford, but it is the argument for the feature: a plausible hunch, inverted by the data.
+Brentford ended 2025/26 conceding **more**: shots 16.7 against a 13.2 season average, xGA 2.10
+against 1.56, deep completions conceded 10.0 against 7.3 — and against opposition 25 Elo
+*stronger*. The example was illustrative rather than a claim about Brentford, but it is the
+argument for having a layer like this at all: a plausible hunch, inverted by the data.
 
 ---
 
-## 2. Calibration — the statistic that ships
+## 2. Two things I got wrong, and how they were caught
 
-The permutation test is the reference and cannot live in a view. So a cheap statistic was fitted
-to it:
+Recorded because the corrected numbers are the ones the design rests on.
+
+**Wrong 1: "nine of seventeen clubs get nothing."** The 9 surviving pairs fall on only 6 distinct
+clubs, so **11 of 17 get nothing**. Thinner than first stated.
+
+**Wrong 2: "PPDA is not a stable club property, reliability 0.48."** This was a split-half
+correlation across 17 clubs. The standard error of an r at n = 17 is about ±0.27, so 0.31 was not
+distinguishable from 0.05 or from 0.6 — a noisy point estimate quoted as a fact. Peder pushed back
+and asked how the assessment was made, which is what surfaced it.
+
+The better estimator uses all 544 club-matches (§3). **PPDA's reliability is 0.77, not 0.48**, and
+`/teams` needs no change. The two measurements do not actually conflict: the variance model
+predicts a split-half r of ~0.62, and the observed 0.31 sits 1.1 standard errors below it.
+
+A third hypothesis also failed: that PPDA *should* vary, because you do not press City the way you
+press a promoted side. Regressing each match's deviation from its club mean on opponent Elo, own
+Elo and venue explains **5.8%** of PPDA's within-club scatter (6–18% across the other metrics), and
+adjusting for it moves reliability from 0.77 to 0.78. The variability is genuine match-to-match
+variation, not response to circumstance.
+
+---
+
+## 3. The measurement the design rests on
+
+Variance decomposition over all 544 club-matches with opponent Elo. The observed spread of club
+means contains within-club noise, so it is corrected before use:
 
 ```
-fpc = sqrt((N - n) / (N - 1))          -- sampling n of N matches WITHOUT replacement
-se  = stddev(season) / sqrt(n) * fpc
-z   = (window_mean - season_mean) / se
+var_between = var(club means) − var_within / matches_per_club
+rel(k)      = var_between / (var_between + var_within / k)
 ```
 
-The finite-population correction is not optional — without it the standard error is overstated
-and every z comes out too small.
+| Metric | between (sd) | within (sd) | **rel(38)** | rel(6) |
+|---|---|---|---|---|
+| Deep completions created | 1.34 | 3.61 | **0.84** | 0.45 |
+| PPDA | 1.53 | 5.19 | 0.77 | 0.34 |
+| Shots taken | 1.30 | 4.41 | 0.77 | 0.34 |
+| Deep completions conceded | 1.11 | 3.68 | 0.77 | 0.35 |
+| Shots conceded | 1.25 | 4.42 | 0.75 | 0.32 |
+| Expected goals for | 0.23 | 0.81 | 0.75 | 0.32 |
+| **Expected goals conceded** | 0.13 | 0.83 | **0.49** | 0.13 |
 
-**Fitted threshold: |z| ≥ 1.95, which agrees with the permutation test on 406 of 408 cases** (one
-false positive, one false negative). Under the 2+ window rule the two approaches select 8 and 9
-pairs respectively, sharing 8.
+**`rel(6)` is this whole investigation in one column.** A six-match mean is about a third signal.
+That is an entirely independent explanation of why the permutation test found nothing and why an
+independent baseline does not help — and it is why a season figure works where a window does not.
 
-1.95 is essentially the normal critical value — but it was **measured, not assumed**. The mean of
-four matches is not normally distributed, and the correction and the non-normality happen to
-roughly cancel. Assuming 1.96 would have been right by luck.
+**`rel(38)` is the design.** A club's season average is a real property for six of these seven
+metrics. Expected goals conceded is the exception: over a *full season*, "this club concedes fewer
+expected goals" is close to a coin flip. It is worth knowing that `/teams` shades xGA and that the
+Defenders and Goalkeepers views rank on xGC — and that `fixture_difficulty` was built on Elo rather
+than xGA, which this vindicates.
+
+### Discrimination
+
+Between-club spread against the standard error of one club's 38-match mean: ratios of **1.4 to
+2.7**. So the league falls into roughly three to five distinguishable groups per axis, not twenty.
+`deep_for` discriminates best at 2.7, `xga` worst at 1.4. Phrasing has to respect that: "Brighton
+create more deep completions than anyone bar City" is defensible; "Brighton concede fewer expected
+goals than Fulham" is not.
+
+### Dead-ball share — the most actionable style axis
+
+Share of non-penalty expected goals from corners, set pieces and direct free kicks. Penalties
+excluded: a penalty is not a style, and the app already separates npxG.
+
+Newcastle **33.5%**, Tottenham 32.2%, Arsenal 31.7% … Manchester City 17.8%, Liverpool **17.5%**.
+A 16-point spread, sd 4.9, split-half r 0.44. This is the axis that answers "whose defenders are
+worth owning", which is the FPL question a style section exists to answer.
 
 ---
 
-## 3. What the data supports, and the preseason boundary
+## 4. Design — style first
 
-**The wording of the ask cannot be built today.** "Their *current* trend" and "they have *started
-the season* well" are both about the season in progress, which does not exist until 2026-08-21.
-Everything above is the **end of last season** and must say so.
+**A style section on `/team/[code]`, built on the full season, ordered by reliability, with the
+strength of the evidence stated in words.**
 
-| Source | Grain | Covers | Usable for |
-|---|---|---|---|
-| `understat_team_match` | per match, `kickoff` | 17 clubs × 38, 2025-08-15 → 2026-05-24 | Club windows. 114 rows have a null `team_code` — the three promoted clubs have no season at all |
-| `understat_shots` | per shot, `game_id` | 2025/26 | Shots for and conceded per match, via the match row for the opponent |
-| `club_elo` | **dated series, live now** | **all 20 clubs incl. promoted** | Opponent-strength control; a genuine *current* direction |
-| `core_insights_player_match` | per player per match, `event` | 9 991 rows, 403 players, 38 GWs, 0 unmapped, 40-field `stats` jsonb | Player-level windows — **out of scope here**, see §7 |
-| `player_gw_stats`, `fixtures.finished` | — | empty until GW1 | The in-season version |
-| `player_snapshots` | hourly, ours | from 2026-07-26 | Ownership and price momentum |
-
-`club_elo` deserves a note: `valid_from` runs to **2026-08-31**, 33 days into the future, because
-ClubElo dates forward to the next fixture. Every read must be `valid_from <= <date>` ordered
-descending — which `elo_now` (migration 0016) already does.
-
----
-
-## 4. Design
-
-Four views, one migration. All classification in SQL where `verify` can assert on it; only
-sentence assembly in TypeScript.
+Grouping follows §3 rather than convention: what a side *creates* is a firmer property than what it
+*concedes*, so creation leads and expected goals conceded is shown without a rank.
 
 ```
-team_match_form   per club per match: the six metrics + opponent Elo on the day
-      ↓
-team_trend        club × metric × window(4,6,8,10): means, stddev, z, opponent gap
-      ↓
-team_claim        club × metric: survives 2+ windows → direction, strength, basis
-      ↓
-trend_check       assertions for `python -m sync.cli verify`
+CREATE  ─ consistent all season          rel ≥ 0.75
+  deep completions created, shots taken, expected goals for
+DEAD BALL ─ fairly consistent            rel ≈ 0.62
+  share of non-penalty xG, corner xG
+CONCEDE ─ shown, not ranked              xGA rel 0.49
+  expected goals conceded, and why it carries no rank
+PRESS   ─ description, not virtue        PPDA rel 0.77
+  already the rule on /teams; a low number is an aggressive press, not a good team
 ```
 
-**The six metrics.** Conceded: expected goals, shots, deep completions. Created: expected goals,
-shots, deep completions. Deep completions earn their place twice over — they were the most
-trend-bearing metric in the measurement, and there is a mechanism for that: territory is a
-coaching choice that persists, whereas expected goals conceded is dominated by who you played.
+**Print the reliability, in words.** This is the app's first principle applied to itself: a number
+without a reference point is decoration, and a claim at rel 0.84 should not look like one at 0.49.
+Rendered as *"holds all season"* / *"fairly consistent"* / *"varies match to match"*, never as a
+correlation coefficient.
 
-**Claim fields** (`team_claim`): `team_code`, `metric`, `direction` (`improving` | `worsening`),
-`windows_held`, `window`, `window_mean`, `season_mean`, `opponent_elo_gap`,
-`opposition` (`easier` | `comparable` | `harder`), `basis` (`last_season` | `in_season`),
-`strength` (`strong` | `discounted`).
+**The FPL read.** One line per club tying style to position: dead-ball share and deep completions
+conceded point at defenders, creation volume at midfielders and forwards. This is the sentence
+Peder asked for, with 38 matches behind it instead of 6.
 
-**`strength` is `discounted`** when the direction is favourable *and* the run was easier by more
-than 40 Elo. Discounted claims are not rendered — they are kept so `verify` can count them and so
-the reason is inspectable.
+### The trend layer that survives
 
-**Threshold: strict.** |z| ≥ 1.95 at 2+ windows. Chosen over a "worth watching" tier because a
-second, weaker tier puts the burden of separating them on the reader at every glance.
+Reduced to what a window can detect and no more:
 
----
-
-## 5. The honesty rules
-
-Baked into the code, not this document:
-
-1. **Never "now" about last-season data.** `basis = 'last_season'` renders as *"ended 2025/26"*.
-   The word "currently" is reserved for `in_season`.
-2. **Always name the window and the comparison.** "2.8 deep completions per match across the last
-   6 of 2025/26, against 6.8 for the season" — never a bare "improving".
-3. **Always state the opposition control** when the gap exceeds ±40 Elo, in the direction that
-   argues against the claim as readily as for it.
-4. **Say nothing rather than something weak.** Nine of seventeen clubs get no claim today. The
-   empty state says so explicitly: *"No trend that survives a robustness check."*
-5. **Promoted clubs get Elo-only claims, labelled as such.** They have no Understat season. An
-   absent claim must not read as "no trend" when the truth is "no data" — DESIGN.md's three kinds
-   of absent apply.
-6. **The claim never contradicts the fixture layer.** Migration 0014 already ranks the *next*
-   fixture; a trend is about the club, not the match. Both appear, neither is rewritten.
+- **The ±50% class only.** `team_trend` keeps the |z| ≥ 1.95-at-2+-windows rule from the original
+  design — calibration in §5 — which is exactly the filter that admits AVL, NEW and SUN and rejects
+  the rest. Phrased as *"started the season differently"*, never as a subtle trend.
+- **Elo drift** over 30 and 90 days for a genuine *current* direction. It is the only signal that
+  covers all 20 clubs, because the three promoted sides have no Understat season at all — and the
+  only one that is honestly about now rather than about last season.
+- **Opponent-strength control.** `club_elo` is a dated series, so opponent strength on the day is
+  available, and it cuts both ways: Crystal Palace's collapse came against opposition 62 Elo
+  *stronger*, which strengthens the claim rather than explaining it away. Threshold ±40 Elo; the
+  league spans roughly 500 points.
 
 ---
 
-## 6. Where it renders
+## 5. Calibration of the trend filter
 
-- **`/team/[code]`** — a Form section: the surviving claims, or the empty state.
-- **`/teams`** — a marker on clubs with a live claim, so the ticker answers "who changed".
-- **Dashboard, "Teams to target"** — where Peder's example lives. One sentence under the club.
-- **Tooltip host** — the full workings on hover: window mean, season mean, z, windows held,
-  opposition. This is why the tooltip work landed first; a claim of this shape belongs in a panel
+The permutation test is the reference and cannot live in a view, so a cheap statistic was fitted to
+it. The finite-population correction is not optional — sampling n of N matches happens *without*
+replacement, and without it every z comes out too small:
+
+```
+fpc = sqrt((N − n) / (N − 1))
+se  = stddev(season) / sqrt(n) × fpc
+z   = (window_mean − season_mean) / se
+```
+
+**|z| ≥ 1.95 agrees with the permutation test on 406 of 408 cases** (one false positive, one false
+negative). Essentially the normal critical value — but measured, not assumed: the mean of four
+matches is not normally distributed, and the correction and the non-normality happen to cancel.
+
+---
+
+## 6. The honesty rules
+
+In the code, not in this document:
+
+1. **Never "now" about last-season data.** `basis = 'last_season'` renders as *"2025/26"*.
+   "Currently" is reserved for `in_season` and for Elo drift.
+2. **Always name the window and the comparison**, never a bare "improving".
+3. **State the opposition control** when the gap exceeds ±40 Elo, in the direction that argues
+   against the claim as readily as for it.
+4. **A rank requires the reliability to support it.** xGA is shown without one. Better to print a
+   number with no rank than a rank the measurement cannot carry.
+5. **Say nothing rather than something weak.** Eleven of seventeen clubs get no trend claim today.
+   The empty state says so: *"No change large enough to separate from match-to-match variation."*
+6. **Promoted clubs get Elo-only claims, labelled.** They have no Understat season, and an absent
+   claim must not read as "no trend" when the truth is "no data" — DESIGN.md's three kinds of
+   absent apply.
+7. **PPDA stays description, never virtue.** Already the rule on `/teams`; the style section
+   inherits it.
+
+---
+
+## 7. Where it renders
+
+- **`/team/[code]`** — the style section. The main deliverable.
+- **`/teams`** — a marker on clubs with a live trend or a notable Elo drift.
+- **Dashboard, "Teams to target"** — one line per club, the FPL read.
+- **Tooltip host** — the workings on hover: window mean, season mean, z, windows held, opposition,
+  reliability. This is why the tooltip work landed first; a claim of this shape belongs in a panel
   with rows, not in an attribute string.
 
 ---
 
-## 7. Deliberately out of scope
+## 8. Deliberately out of scope
 
-- **Player-level trends.** The data supports it (§3) but the noise floor has not been measured
-  there, and minute-limited samples are worse than club samples — a player with four starts in the
-  window is a smaller N than any club. Revisit with the same permutation method first.
-- **A "worth watching" tier.** See §4.
-- **Causal language.** "Because they changed formation" is not in any table we hold.
-- **Trends over more than one season.** Expected stats are zero before 2022/23 and squads turn
-  over; the comparison would not mean what it appears to.
-
----
-
-## 8. Verification
-
-- `trend_check` asserts: every claim has ≥2 windows held; no claim without a season sample of ≥20
-  matches; `direction` agrees with the sign of `window_mean − season_mean` **after** the metric's
-  own direction is applied (conceding less is `improving`, creating less is `worsening` — the same
-  trap as the heatmap's "colour means better, never bigger"); no `in_season` basis before GW1.
-- A probe script re-runs the permutation test against the shipped view and fails if the two
-  disagree on which pairs survive. The calibration in §2 is a measurement taken once; the probe is
-  what keeps it true.
-- `FIX_WHEN_LIVE.md` gains: on the first in-season run, confirm `basis` flips to `in_season`, and
-  that a 6-match window early in the season is compared against **last season** rather than
-  against a 6-match "season average" of itself.
+- **Player-level trends.** `core_insights_player_match` supports it — 9 991 rows, 403 players, 38
+  gameweeks, 0 unmapped, a 40-field `stats` jsonb — but the noise floor has not been measured there,
+  and minute-limited samples are smaller than any club's. Run the same variance decomposition first.
+- **A "worth watching" tier.** A second, weaker tier makes the reader separate the two at every
+  glance.
+- **Causal language.** "Because they changed formation" is in no table we hold.
+- **Cross-season comparison.** Expected stats are zero before 2022/23 and squads turn over.
 
 ---
 
-## 9. Why this gets better in September
+## 9. Verification
 
-The noise finding is specific to "the last 6 of a *completed* season", where 6 matches is a
-subsample of 38 that the season average already contains. **After GW6, "the last 6" is all the
-evidence there is**, and the comparison becomes this season versus last — a different and much
-stronger question. The machinery is identical; the evidence strengthens every round.
+- `style_check` asserts: every reliability figure on screen traces to a stored measurement rather
+  than a literal; no metric carries a rank whose reliability is below 0.6; xGA carries no rank.
+- `trend_check` asserts: ≥2 windows held per claim; no claim on a season sample under 20 matches;
+  `direction` agrees with the sign of the delta **after** the metric's own direction is applied
+  (conceding less is `improving`, creating less is `worsening` — the heatmap's "colour means better,
+  never bigger" trap in a new place); no `in_season` basis before GW1.
+- A probe re-runs the permutation test against the shipped view and fails if they disagree on which
+  pairs survive. The calibration in §5 is a measurement taken once; the probe keeps it true.
+- The variance decomposition is itself a probe, not a one-off: reliabilities move as matches
+  accumulate, and a figure printed on screen must not be a stale constant from July.
+- `FIX_WHEN_LIVE.md` gains: recompute §3 after GW6, GW12 and GW19 — `rel(k)` rises with k, so the
+  set of metrics that earn a rank should grow through the season. If it does not, that is a finding.
