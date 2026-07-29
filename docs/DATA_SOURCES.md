@@ -448,8 +448,8 @@ carrying team totals and clean sheets.
    totals, while Brasil Serie A at 12–15h carried **46** and Argentine Primera **22**. No PL
    fixture falls inside the deep window before 21 August, so whether the PL gets the 46-market
    set **cannot be established today**. A priori it should — the PL is Norsk Tipping's largest
-   football product — but that is an expectation. `FIX_WHEN_LIVE.md` holds the 19–20 August
-   probe that settles it, and it decides how much of this section survives.
+   football product — but that is an expectation. [FIX_WHEN_LIVE.md](FIX_WHEN_LIVE.md) §1 holds
+   the 19–20 August probe that settles it, and it decides how much of this section survives.
 3. **Incomplete coverage of a priced gameweek is the expected state.** One of ten GW1 fixtures
    is simply absent. Unmatched events are logged to `unmatched_names` and **never fatal** —
    vm26's rule, and the right one: odds are decision support, not scoring.

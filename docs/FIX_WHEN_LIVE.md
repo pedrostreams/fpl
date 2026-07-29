@@ -101,6 +101,14 @@ morning** — this hour is unrepeatable.
       the squad — `my-team/{id}/` is 403 without a session cookie, `users.premierleague.com` no
       longer resolves, and login is PingOne with no third-party client. See LATER.md §10; a "my
       team" page is unblocked from this moment with no auth work.
+- [ ] **`sell_candidates`' `price_falling` reason is evaluated for the first time.** It reads
+      `net_transfers_event < -20000` or `price_change_percent < -50`, and both are exactly 0 for
+      all 558 players until this hour — so one of the six reason codes has never once been true.
+      `select price_reason_rows from sell_check;` should go above 0, and the players it names
+      should be the ones public sites list as most transferred out. **Both thresholds are guesses
+      set against a frozen table**: if it flags 200 players it is too loose, and if it has flagged
+      nobody by GW2 it is too tight. A reason code that never fires is worse than one that fires
+      wrongly, because nothing draws attention to it.
 
 ## 3. The first price change — the night of 2026-08-21/22, ~01:00–03:00 UTC
 
@@ -161,6 +169,24 @@ The biggest shape change. Several things flip at once, so check them in this ord
       p_win_per_fixture, expected_wins from fixture_run order by fixtures`
 - [ ] `player_gw_stats` gives real `tournament` attribution, so per-90 rates are not deflated
       by cup minutes → `select tournament, count(*) from core_insights_player_match group by 1`
+- [ ] **`position_price_value` re-derives itself on a one-match season, and its headline claim goes
+      with it.** The view reads `player_season_totals` at `stats_season`, so the moment that flips,
+      the £5.0–5.5 defender finding (17.27 against midfield's 11.54 points per £m, at the median)
+      is recomputed from a single gameweek. Expect noise for weeks. The dashboard panel prints
+      whatever the view says and has **no minutes floor** — deliberately, because the 2025/26 pool
+      needed none. Read the panel and decide then whether it needs one.
+- [ ] **`player_midweek_load` still describes last season.** It reads
+      `core_insights_player_match` at `stats_season`, the only place per-match `tournament` exists.
+      So "three cup games in his last six" is a 2025/26 fact attached to a 2026/27 player, and it
+      is wrong for everyone who changed club or whose side entered or left Europe. **The switch is
+      not free**: the FPL per-match feed has no competition field, so `player_gw_stats` alone
+      cannot replace it — decide whether to keep the old window as a prior or join fixtures by date.
+- [ ] **`rotation_risk`'s `minutes_share` is a preseason stand-in**, from `player_availability`'s
+      starts-per-appearance. That is why the risk ladder leads with minutes rather than with squad
+      competition. Confirm `rotation_risk_check.non_starters_say_so` and
+      `top_of_pool_has_nobody_ahead` still hold on real minutes, and re-read the **0.60 gate**: it
+      exists only because accepting any rival flagged 200 of 563 players, Endo among them with
+      eight Liverpool midfielders ahead of him. That calibration was done against frozen data.
 
 ## 5. First reschedule — whenever a cup tie forces one
 
@@ -170,9 +196,26 @@ The biggest shape change. Several things flip at once, so check them in this ord
 - [ ] `fixture_run` treats a double as two chances: `expected_wins` reflects both, and the
       per-fixture rate does not
 - [ ] The `#` column shows 7 for a club with a double in the window
+- [ ] **`gameweek_shape` has three states and only one is currently observable.** All 760
+      club-gameweeks in the window are `is_flat`, and every gameweek beyond 56 days is
+      `is_provisional` — so the *confirmed* branch and both irregular branches have never rendered.
+      Here: `select * from gameweek_shape where not is_flat;` returns rows, `/gw`'s first step stops
+      saying every club plays once, and a provisional gameweek is still worded as **unknown rather
+      than as normal**, which is the whole reason the third state exists.
+- [ ] **`rotation_pairs` earns its keep, or it does not.** `gain_in_points` carries the measured
+      verdict — best pair **1.6 points over six gameweeks**, mean 0.5 — and that was measured on a
+      calendar with no blanks, which is the only condition under which pairing is worth anything.
+      Re-read `select * from rotation_pairs order by gain_in_points desc limit 5;` once one exists.
+      **If the number does not move, the feature is decoration and the page should say so.**
+- [ ] **A double gameweek is the first time `p_clean_sheet_any` and `expected_clean_sheets`
+      disagree.** One is `1 − Π(1−p)`, the other `Σp`; over a single fixture they are equal, which
+      is exactly why the distinction is untestable today. Confirm they diverge in the expected
+      direction — the sum exceeds the probability — and that the FPL-relevant column is the sum,
+      bonuses being awarded per fixture.
 
 These are the last two unexercised render paths. To test before the calendar cooperates:
-duplicate or delete a `fixtures` row inside a transaction, render, roll back.
+duplicate or delete a `fixtures` row inside a transaction, render, roll back — which is what
+`python scripts/probe/prove_gameweek_shape.py` does, against the real views.
 
 ## 6. After ~5 gameweeks
 
@@ -191,6 +234,20 @@ duplicate or delete a `fixtures` row inside a transaction, render, roll back.
       for this section is the *current* season's version once it has six league games of its own
 - [ ] Reliability floor makes sense again — enough minutes accrued that percentiles mean
       something
+- [ ] **Re-read the price-bracket claim on this season.** The defender-value finding is the one
+      piece of allaboutfpl's advice that survived measurement, and it survived on 2025/26.
+      `position_price_value` recomputes itself, so this is a reading and not an edit: does
+      £5.0–5.5 still lead the defenders, does keeper £4.6–5.5 still lead the whole game at 22.20,
+      and — the question the median was added to answer — **do the mean and the median still agree?**
+      A gap between them means one player is carrying the bracket, which is what made £4.0m keepers
+      read as 5.84 on the mean and 0.13 on the median.
+- [ ] **Recompute `rel(6)` for every form metric on this season's own matches.** `player_form_metric`
+      ships as `basis = 'last_6_2025_26'`; a `last_6_2026_27` becomes possible here. The gate is
+      `reliability_6 >= 0.60` read off the *measured* number, so metrics move in and out on their
+      own — **box touches** (0.55/0.71/0.54 last season) is the one to watch holding, and **big
+      chances** (0.11/0.15/0.25) the one that may finally earn a rank. Nothing is hardcoded; if the
+      set of ranked metrics does not change at all, that is itself a finding about the metrics
+      rather than about the season.
 - [ ] **Switch the captain model to a rolling six-gameweek window.** *(The window itself shipped
       2026-07-29 as `player_form_metric`; what is left is wiring `captain_picks` to read it.)* ~~`player_shot_profile` and
       `captain_picks` are whole-season today because `player_gw_stats` is empty~~ — **wrong, and
@@ -273,6 +330,24 @@ duplicate or delete a `fixtures` row inside a transaction, render, roll back.
 
 Run this whole block once after GW1 and once after GW5. Each item is something that currently
 *cannot* be wrong because the data is frozen.
+
+### `/gw`
+
+The weekly entry point, and the newest thing here — every number on it is currently frozen.
+
+- [ ] **All five steps have something to say.** The page's whole premise is that a fixed order gets
+      answered every week; a step that renders empty breaks the premise more badly than a wrong
+      number would. Walk all five after GW1 and again after GW5.
+- [ ] **The buy/sell conflict marker stays reciprocal, and the overlap shrinks.** On 2026-07-29
+      **eight of eight** sell candidates were also target candidates — which is either a genuine
+      disagreement worth showing or a sign `target_players` is too broad. Count it again once both
+      sides read live minutes: still 100% means one of the two views is not discriminating.
+- [ ] **`sell_word` still reads as a sentence, not a list**, and
+      `sell_check.word_matches_reasons` stays true. The word is built from the reason array
+      precisely so the two cannot drift — adding a reason code without adding its phrase is the
+      failure mode, and it is silent.
+- [ ] A blank run still is **not** a sell reason. This is the most common mistake in the game and
+      the rule is deliberate; if a future edit adds returns as a signal, it needs an argument.
 
 ### `/player/[code]` and `/team/[code]`
 
@@ -422,5 +497,5 @@ Run this whole block once after GW1 and once after GW5. Each item is something t
 - [ ] **Deploy to Vercel** with `DATABASE_URL` set to the session pooler host
 - [ ] **Visual design review.** Every screen has been verified by asserting on rendered HTML,
       never by looking at it. Spacing, weight and contrast are unaudited. Eight of the ten open
-      questions in [DESIGN.md](DESIGN.md) §9 are independent of the season; the diverging colour
+      questions in [DESIGN.md](../.claude/context/DESIGN.md) §9 are independent of the season; the diverging colour
       ramp and the landing page want in-season data to judge

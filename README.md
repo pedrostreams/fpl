@@ -9,6 +9,9 @@ Norwegian friend-group mini-league.
   the live endpoint, with what it actually provides and what died recently.
 - [docs/PLAN.md](docs/PLAN.md) — phases and sequencing.
 - [docs/SYNC_PLAN.md](docs/SYNC_PLAN.md) — schema, cadence, idempotency, identity matching.
+- [docs/FIX_WHEN_LIVE.md](docs/FIX_WHEN_LIVE.md) — 136 checks to run once the season starts,
+  ordered by when each becomes checkable. Nothing is `finished` until the deadline, so a large
+  part of this codebase has never executed against the data shape it will run on for ten months.
 
 ## Stack
 
@@ -126,7 +129,8 @@ ten false positives.
 | `/teams` | Fixture difficulty for the next six gameweeks, plus style and performance per team — PPDA press axis, xG/xGA, clean sheets, Elo |
 | `/prices` | Price and ownership movement from our own hourly snapshots — the only screen whose data exists nowhere else |
 
-Design language: [.claude/context/DESIGN.md](.claude/context/DESIGN.md).
+Design language: [.claude/context/DESIGN.md](.claude/context/DESIGN.md). Per-surface go-live
+checks: [docs/FIX_WHEN_LIVE.md](docs/FIX_WHEN_LIVE.md).
 
 ### Fixture difficulty
 

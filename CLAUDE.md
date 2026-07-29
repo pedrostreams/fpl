@@ -84,10 +84,13 @@ expression it is checking proves only that SQL is deterministic; assert against 
 derivation, which is what `prove_style_claims.py` exists to be.
 
 **Nothing is `finished` until 2026-08-21**, so every code path keyed on an in-progress season
-is unexercised by the data. `.claude/context/FIX_WHEN_LIVE.md` is the go-live checklist — 74
-items, ordered by when each becomes checkable, from the deadline hour through the first price
-change to end-of-season refit. **Add to it whenever you write something the frozen data cannot
-reach**, and tick items off there rather than rediscovering them. That is how the fixture ticker shipped with incomparable totals:
+is unexercised by the data. [docs/FIX_WHEN_LIVE.md](docs/FIX_WHEN_LIVE.md) is the go-live
+checklist — **136 items**, ordered by when each becomes checkable, from the deadline hour through
+the first price change to end-of-season refit. It lives in `docs/` and not `.claude/context/`
+because it is a list a human ticks through on the day, not agent guidance. **Add to it whenever you
+write something the frozen data cannot reach**, and tick items off there rather than rediscovering
+them. That rule is easy to half-follow: of the eight features shipped 2026-07-29, six had left
+nothing behind here until they were audited for it a day later. That is how the fixture ticker shipped with incomparable totals:
 `fixture_run` looked correct and had never run against the state it will spend the whole season
 in. To exercise one, simulate rather than wait — either rewrite `finished` as
 `kickoff_time < <cutoff>` inside a copy of the view's SQL, or briefly `update fixtures set
