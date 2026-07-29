@@ -11,4 +11,4 @@ Wishlist for Later
 9. Optimise for mobile responsiveness.
 10. Login with FPL to get current team (before GW deadline)
 11. Email integration with Resend to send emails daily with updates (price changes, "your team is not updated" etc). NOT NOW I will inform.
-12. Dark Mode
+12. [DONE 2026-07-29 — three-state Auto/Light/Dark in the header; the tokens were already there, the toggle wasn't] Dark Mode

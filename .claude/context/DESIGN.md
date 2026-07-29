@@ -63,6 +63,7 @@ in a `style` prop. Every token has a dark and a light value; dark is the default
 | `--heat-lo` / `--heat-hi` | The two ends of the percentile ramp |
 | `--pos-gkp` `--pos-def` `--pos-mid` `--pos-fwd` | Position identity |
 | `--tip-bg` / `--tip-border` / `--tip-shadow` | Tooltip panel. Deliberately not `--surface`: it floats above cards that already use it, so it is lifted a step and given the one earned shadow in this language. In light mode it inverts and goes *darker* than the page, because above near-white a lighter panel has no edge to stand on — which is why its foreground tokens are pinned rather than inherited. |
+| `--scrim` | Behind a modal — the search palette and the column picker. Carries its own alpha, because the two modes need different *weights* and not merely different hues: the 55%-black both call sites hardcoded is a barely-there dimming over an L 0.155 page and a blackout over a near-white one. |
 | `--chart-mark` `--chart-gkp` `--chart-def` `--chart-mid` `--chart-fwd` | Data marks — **not** the same steps as the UI hues |
 | `--ok` `--warn` `--danger` | Status only — availability, staleness, sign of a difference |
 
@@ -84,8 +85,10 @@ borderColor: color-mix(in oklab, var(--warn) 28%, var(--border));
 ```
 
 **Dark is not the only mode.** Light overrides live in both a `prefers-color-scheme` block
-and a `[data-theme='light']` block, so an explicit toggle can win over the OS. There is no
-toggle in the UI yet — see §9.
+and a `[data-theme='light']` block, so an explicit toggle can win over the OS. Both blocks are
+now reachable from the UI — see §7, *Theme*. **Any token added to one must be added to all
+three places**, or the manual override draws dark-mode values on a pale surface; that is why
+the chart hues are duplicated rather than factored out.
 
 ### Colour budget
 
@@ -410,6 +413,37 @@ order. Both are survivable only because of the rule below.
 **Tooltips enhance, they never gate.** Every number a tooltip shows is already on screen or in
 the table. Nothing is reachable only by hovering.
 
+### Theme
+
+[components/theme-toggle.tsx](../../components/theme-toggle.tsx) in the header, `lib/theme.ts`
+for the storage key and the pre-paint script. **Three states, not two** — `Auto` / `Light` /
+`Dark`, which is what the CSS in §2 already described: `data-theme='system'` (or no attribute)
+leaves the `prefers-color-scheme` query in charge, `'dark'` trips the `:not([data-theme='dark'])`
+guard so `:root` wins, `'light'` wins on source order. A binary toggle would make "follow the OS"
+unreachable after the first click and strand a block of working CSS.
+
+Two rules, and both are about the first frame:
+
+- **The stored choice is stamped by a blocking inline `<script>` in `<head>`.** No server can read
+  `localStorage`, so the only alternative is painting the default theme and correcting it — a
+  visible flash, and the loudest possible one because it is the whole viewport. ~200 bytes of
+  blocking script is the honest price. It must `try`/`catch`: `localStorage` *throws* on access in
+  Safari private mode, and an unhandled throw would leave every page stuck on the default.
+- **The active segment is selected in CSS off `<html data-theme>`, never from React state.** The
+  server does not know the choice, so state-driven styling either mismatches on hydration or lights
+  up `Auto` for a frame before jumping — the same flash, reintroduced inside the control that exists
+  to prevent it. React state in that component drives *only* `aria-pressed` and the resolved value
+  in the `Auto` tooltip, i.e. the things CSS cannot say, and it is seeded with the value the server
+  rendered so hydration has nothing to reconcile.
+
+`Auto`'s tooltip names what it currently resolves to, and a `matchMedia` listener keeps that
+honest when the OS flips mid-session — principle 3 applied to a control rather than to data. And
+no icon: §8 has no icon set, and the sun/moon pair is exactly how a codebase acquires one.
+
+**No transition on the theme swap.** §8's "no animation" holds, and cross-fading every surface on
+the page is the most expensive possible exception to it. The switch is instant, which is also what
+makes the CSS-variable approach free.
+
 - **No client JS unless the interaction needs it.** Pages are server components; only
   `/scout`'s table is `'use client'`. A card grid that never sorts stays on the server.
 - Hover states are `transition-colors` on background only. No transforms, no shadows.
@@ -430,8 +464,11 @@ Each of these is a decision, not a gap:
 - **No component library.** `Field`, `Slider`, `Toggle`, `Heat`, `Bar` are ~15 lines each and
   local to where they're used. Promote to `components/` on the *second* use, not the first.
 - **No animation.** Nothing here benefits from motion.
-- **No auth, no user state.** All data is public; there is nothing to protect and nothing to
-  persist. Filter state lives in React and dies on reload — deliberate for now, see §9.
+- **No auth.** All data is public; there is nothing to protect. Filter state lives in React and
+  dies on reload — deliberate for now, see §9. **Theme is the one thing in `localStorage`**, and
+  it earns the exception by being a property of the reader rather than of the question they are
+  asking: a filter is part of what you are looking at right now, a theme is a fact about the room
+  you are sitting in. Anything else wanting to persist should have to make that argument too.
 
 ---
 
@@ -439,8 +476,12 @@ Each of these is a decision, not a gap:
 
 Recorded, not decided. Do not resolve these silently in a feature commit.
 
-1. **Theme toggle.** Tokens support it, nothing exposes it. Needs a control and a
-   `localStorage` read that doesn't flash on first paint.
+1. ~~**Theme toggle.**~~ **Settled 2026-07-29** — three-state `Auto`/`Light`/`Dark` in the
+   header, stamped before first paint by an inline head script. Contract in §7, *Theme*. The
+   part still unaudited is the *light* palette itself: it has now been looked at, but only on
+   one display, and the heatmap's light ramp (`--heat-lo` near-white → `--heat-hi` at L 0.80)
+   has a shorter usable range than the dark one. If light mode gets real use, that ramp is the
+   first thing to re-measure.
 2. **Density.** 13px rows are tight on a laptop and comfortable on a large monitor. A
    compact/comfortable switch, or pick one and commit?
 3. **`/scout`'s 18 columns.** Column visibility presets ("attacking", "defensive",

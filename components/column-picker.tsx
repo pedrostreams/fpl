@@ -67,7 +67,7 @@ export function ColumnPicker({
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:p-8"
-      style={{ background: 'color-mix(in oklab, black 55%, transparent)' }}
+      style={{ background: 'var(--scrim)' }}
       onClick={onClose}
     >
       <div

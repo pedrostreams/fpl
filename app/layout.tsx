@@ -2,8 +2,10 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Logo } from '@/components/logo'
 import { Search } from '@/components/search'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { TooltipHost } from '@/components/tooltip-host'
 import { getSearchIndex } from '@/lib/queries'
+import { THEME_SCRIPT } from '@/lib/theme'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -25,7 +27,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const searchIndex = await getSearchIndex()
 
   return (
-    <html lang="en">
+    // suppressHydrationWarning because the script below writes `data-theme` here before React
+    // hydrates. Scoped to this element only — it does not extend to children.
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Blocking, inline, and in <head> deliberately. It has to stamp `data-theme` before the
+            first frame, and only a synchronous script in the head can: an effect, a bundled
+            module or a script at the top of <body> all run after the browser has had a chance to
+            paint the default theme, and a dark page flashing to light is worse than no toggle.
+            See lib/theme.ts. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="min-h-screen antialiased">
         <header
           className="sticky top-0 z-50 border-b backdrop-blur"
@@ -54,8 +66,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 </Link>
               ))}
             </nav>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
               <Search index={searchIndex} />
+              {/* Rightmost, after search: a setting you touch once, not a tool you reach for
+                  every session. */}
+              <ThemeToggle />
             </div>
           </div>
         </header>

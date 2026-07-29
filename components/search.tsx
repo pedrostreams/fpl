@@ -101,7 +101,7 @@ export function Search({ index }: { index: SearchEntry[] }) {
       {open && (
         <div
           className="fixed inset-0 z-[100] flex items-start justify-center p-4 pt-[12vh]"
-          style={{ background: 'color-mix(in oklab, black 55%, transparent)' }}
+          style={{ background: 'var(--scrim)' }}
           onClick={() => setOpen(false)}
         >
           <div

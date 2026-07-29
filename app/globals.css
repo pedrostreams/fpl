@@ -62,6 +62,11 @@
   --tip-border: oklch(0.36 0.018 255);
   --tip-shadow: oklch(0.08 0.01 255 / 0.55);
 
+  /* Modal scrim. Carries its own alpha rather than being color-mixed at the call site, because
+     the two modes need different weights and not just different hues: 55% black over a near-white
+     page is a blackout, while over an L 0.155 page it is barely a dimming. */
+  --scrim: oklch(0.09 0.012 255 / 0.62);
+
   color-scheme: dark;
 }
 
@@ -103,6 +108,8 @@
     --tip-border: oklch(0.38 0.018 255);
     --tip-shadow: oklch(0.55 0.02 255 / 0.28);
 
+    --scrim: oklch(0.32 0.014 255 / 0.36);
+
     color-scheme: light;
   }
 }
@@ -136,6 +143,7 @@
   --tip-bg: oklch(0.255 0.015 255);
   --tip-border: oklch(0.38 0.018 255);
   --tip-shadow: oklch(0.55 0.02 255 / 0.28);
+  --scrim: oklch(0.32 0.014 255 / 0.36);
   color-scheme: light;
 }
 
@@ -177,6 +185,61 @@ body {
   font-family: var(--font-mono);
   font-size: 0.8125rem;
   letter-spacing: -0.01em;
+}
+
+/*
+  Theme switch — components/theme-toggle.tsx.
+
+  h-7 to sit level with the search button beside it, not the h-9 of in-page controls: the header
+  bar is 56px and two 36px controls in it look wedged.
+*/
+.theme-switch {
+  display: inline-flex;
+  align-items: stretch;
+  height: 1.75rem;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface-2);
+}
+
+.theme-opt {
+  padding: 0 0.4375rem;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+  cursor: pointer;
+  transition: background-color 120ms, color 120ms;
+}
+
+.theme-opt:hover {
+  color: var(--muted);
+}
+
+/*
+  The active segment is selected from the attribute on <html>, never from React state.
+
+  The server cannot read localStorage, so a state-driven highlight either mismatches on
+  hydration or lights up "Auto" for one frame before jumping — which is the first-paint flash
+  the pre-paint script in lib/theme.ts exists to prevent, reintroduced in the control that
+  advertises it. Selecting in CSS means the correct segment is already lit in the first frame.
+
+  `:not([data-theme])` covers the no-JS case: with no attribute the page really is following the
+  OS, so Auto is the honest thing to show as active.
+*/
+:root[data-theme='system'] .theme-opt[data-theme-opt='system'],
+:root:not([data-theme]) .theme-opt[data-theme-opt='system'],
+:root[data-theme='light'] .theme-opt[data-theme-opt='light'],
+:root[data-theme='dark'] .theme-opt[data-theme-opt='dark'] {
+  /* The established active-control treatment: accent tint, accent border, accent text. */
+  background: color-mix(in oklab, var(--accent) 15%, var(--surface));
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+  color: var(--accent);
 }
 
 /* Thin, unobtrusive scrollbars — the table scrolls in both axes constantly. */
