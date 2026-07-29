@@ -3,12 +3,14 @@ import { notFound } from 'next/navigation'
 import { PlayerPhoto } from '@/components/player-photo'
 import { TeamBadge } from '@/components/team-badge'
 import { ShotMap } from '@/components/shot-map'
+import { PlayerFormSection } from '@/components/player-form'
 import { WatchButton } from '@/components/watch-button'
 import { COLUMNS_BY_KEY } from '@/lib/columns'
 import { POSITION_VAR, fmt, fmtInt, fmtPct, fmtPrice, formatCell, ordinal, statusColour } from '@/lib/format'
 import type { MetricPercentile } from '@/lib/queries'
 import {
   getPlayerCareer,
+  getPlayerForm,
   getPlayerPercentiles,
   getPlayerFixtures,
   getPlayerRow,
@@ -188,7 +190,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ code: s
   const code = Number(raw)
   if (!Number.isInteger(code) || code <= 0) notFound()
 
-  const [row, shots, career, fixtures, ctx, watched, pct] = await Promise.all([
+  const [row, shots, career, fixtures, ctx, watched, pct, form] = await Promise.all([
     getPlayerRow(code),
     getPlayerShots(code),
     getPlayerCareer(code),
@@ -196,6 +198,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ code: s
     getSeasonContext(),
     getWatchlistCodes(),
     getPlayerPercentiles(code),
+    getPlayerForm(code),
   ])
   if (!row) notFound()
 
@@ -268,6 +271,19 @@ export default async function PlayerPage({ params }: { params: Promise<{ code: s
           </div>
         </div>
       </div>
+
+      {/* ---- recent form: the window, gated the same way club style is ---- */}
+      <Section
+        title="Recent form"
+        note={
+          `His last six league appearances against his own ${ctx.statsSeason} season, with his own ` +
+          `match-to-match error bar deciding what counts as a change. Appearances, not gameweeks — ` +
+          `a player benched twice would otherwise have a "last six" reaching back months. League ` +
+          `only: European and cup matches are excluded, which is 2 251 of 12 242 rows.`
+        }
+      >
+        <PlayerFormSection form={form} position={position} />
+      </Section>
 
       {/* ---- shot map ---- */}
       <Section

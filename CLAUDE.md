@@ -56,7 +56,8 @@ that name is in scope. It is currently harmless because `player_seasons` holds o
 
 **`select * from <name>_check;` is how a view is verified**, and every boolean in one must be
 true. `python -m sync.cli verify` asserts every boolean in `market_odds_check`,
-`fixture_percentage_check`, `position_price_value_check`, `style_check` and `trend_check`
+`fixture_percentage_check`, `position_price_value_check`, `form_check`, `style_check` and
+`trend_check`
 wholesale, and reports NULLs rather than failing them — some are legitimately empty until the
 season starts. Two traps that made a check look like it passed when it asserted nothing:
 `bool_and` over **zero rows is NULL**, which reads as a pass in a table of booleans — so publish
@@ -275,6 +276,32 @@ changes of roughly ±50%. And **xGA is 0.49 over a full season**, which weakens 
 and the Defenders/Goalkeepers views ranking on xGC, and vindicates `fixture_difficulty` being
 built on Elo. Nothing is hardcoded: the reliabilities are recomputed by the views as matches
 accumulate, so the set of metrics that earn a rank should grow through the season.
+
+**Recent form is the same shape as club style: a window, an error bar, and two gates.**
+Migration 0027 + `components/player-form.tsx`. `core_insights_player_match.stats` already carries
+per-match shots, box touches, chances created, big chances and the CBIT components for all 38
+gameweeks — 11 168 of 11 168 appearances, zero empty — so the window needs **no cross-source join
+and no `player_gw_stats`**. Four things that are load-bearing:
+
+- **`tournament = 'prem'`.** 2 251 of 12 242 rows are European and cup matches, and without the
+  filter "his last six league games" silently includes a Thursday Conference League tie.
+- **Six *appearances*, not six gameweeks.** A player benched twice would otherwise have a window
+  reaching back months.
+- **The pool is the position.** Pooling positions inflates `rel(6)` for shots from **0.37
+  (defenders) to 0.64** — the precision is borrowed entirely from the striker-versus-defender
+  contrast. Every decomposition, rank and percentile partitions by `element_type`.
+- **A zero-variance player is not "down on his season".** `abs(0) >= 2 * 0` is true, so a defender
+  who never hit the DEFCON threshold and a midfielder with no shots all season were both flagged as
+  having moved — **182 of 2 593 rows**, every one printing "down on his season". `separated`
+  therefore requires `var_within > 0`, and `form_word` reads that boolean rather than recomputing
+  the comparison, because two copies of it is how the badge and the sentence came to disagree.
+
+Measured `rel(6)` within position (DEF/MID/FWD): **box touches 0.55/0.71/0.54** is the best
+six-match attacking signal and was in neither allaboutfpl's vocabulary nor our catalogue; CBIT
+0.65/0.70/0.55; minutes 0.63/0.73/0.79; **big chances 0.11/0.15/0.25**, which is one of
+allaboutfpl's three headline captaincy metrics and cannot carry a six-match rank. Big chances stays
+registered rather than deleted — the gate excludes it on the *measured* number, so a fuller season
+can promote it without a migration.
 
 **A player is rendered by `components/player-identity.tsx`, everywhere.** Five copies existed —
 dashboard, captain panel, table cell, search result, gems card — and they disagreed about spacing,

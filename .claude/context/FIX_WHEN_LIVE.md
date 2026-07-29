@@ -186,10 +186,13 @@ duplicate or delete a `fixtures` row inside a transaction, render, roll back.
       minute league appearances is **DEF 24.1%, MID 13.7%, FWD 0.2%** — so DEFCON is irrelevant
       for forwards, and keepers must be excluded (FPL awards them none; a CBIT count for a
       keeper is an artifact). It is also the *most* reliable six-match signal measured,
-      `rel(6) = 0.65` for defenders, beating every attacking metric. Built in F7/F8
+      `rel(6) = 0.65` for defenders, beating every attacking metric. **Built 2026-07-29** in
+      migration 0027 as `defcon_hit` — a per-match 0/1 whose mean is the hit rate. What remains
+      for this section is the *current* season's version once it has six league games of its own
 - [ ] Reliability floor makes sense again — enough minutes accrued that percentiles mean
       something
-- [ ] **Switch the captain model to a rolling six-gameweek window.** ~~`player_shot_profile` and
+- [ ] **Switch the captain model to a rolling six-gameweek window.** *(The window itself shipped
+      2026-07-29 as `player_form_metric`; what is left is wiring `captain_picks` to read it.)* ~~`player_shot_profile` and
       `captain_picks` are whole-season today because `player_gw_stats` is empty~~ — **wrong, and
       corrected 2026-07-29.** The window needs no FPL per-match data at all:
       `core_insights_player_match` holds per-match shots, box touches, xG, xA and minutes for all
@@ -204,7 +207,9 @@ duplicate or delete a `fixtures` row inside a transaction, render, roll back.
       currently discriminates almost nothing. ~~Per-match minutes from `player_gw_stats`~~ —
       **also already available** in `core_insights_player_match`, and minutes turn out to be the
       second most reliable six-match signal measured (`rel(6)` 0.63–0.79). So the weakest term in
-      any projection has a much better estimator available today than the one in place.
+      any projection has a much better estimator available today than the one in place. The
+      estimator now exists — `player_form_metric` where `metric = 'minutes'` — so this item is
+      down to replacing the component inside `captain_picks`.
 - [ ] **Confirm the soccerdata enum repair still fires.** `verify` fails if `situation` or
       `body_part` goes NULL, but check `shot_attribute_repair` in the understat job output:
       `situation_filled` should be ~92 per season and `body_part_filled` ~1 800. If both drop to

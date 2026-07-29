@@ -574,7 +574,8 @@ Which source answers each thing you asked for:
 
 | Question you want answered | Primary source | Supporting |
 |---|---|---|
-| Which players are performing *right now* | FPL API (`form`, xGI per 90, DEFCON per 90) | Sofascore `rating`, Understat `xg_chain` |
+| Which players are performing *right now* | **`player_form_metric`** — last six league appearances against his own season, gated on measured `rel(6)` within position | FPL `form`, xGI per 90; Sofascore `rating` |
+| **Has he actually changed, or is that noise?** | **His own match-to-match standard error** (`separated`), not a league comparison | `player_form_reliability` publishes the decomposition per position per metric |
 | Which players are hidden gems | FPL API (`selected_by_percent` × xGI/90 × `now_cost`) | Understat `xa`/`xg_buildup`, Sofascore `bigChancesCreated` |
 | **Who rises/falls in price in the next 24h** | **Our own `player_snapshots` time series** (net-transfer velocity) | FPL `price_change_percent`, `transfers_in/out_event` |
 | Which teams are performing | Understat team xG/xGA rolling | ClubElo, odds-implied strength |

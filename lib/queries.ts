@@ -698,6 +698,74 @@ export async function getSeasonContext(): Promise<SeasonContext> {
   }
 }
 
+export type FormMetric = {
+  metric: string
+  label: string
+  shortLabel: string
+  decimals: number
+  /** A rate (a mean of 0s and 1s) rather than a count — must render as a percentage. */
+  asPercent: boolean
+  /** The last six league appearances. */
+  window: number | null
+  season: number | null
+  delta: number | null
+  stdError: number | null
+  /** Gate 1 — may the position be ordered on a six-match figure of this metric at all. */
+  rankEarned: boolean
+  rank: number | null
+  pool: number | null
+  percentile: number | null
+  /** Gate 2 — has THIS player's own figure moved, whatever gate 1 says. */
+  separated: boolean
+  z: number | null
+  word: string
+  reliability6: number | null
+  reliabilitySeason: number | null
+}
+
+export type PlayerForm = {
+  appearances: number
+  /** Absent for the 263 players without six league appearances — new signings and promoted clubs. */
+  metrics: FormMetric[]
+  basis: string | null
+}
+
+export async function getPlayerForm(code: number): Promise<PlayerForm> {
+  const rows = await query<Record<string, unknown>>(
+    `select metric, label, short_label, decimals, as_percent, window_mean, season_mean, delta, std_error,
+            rank_earned, metric_rank, pool, percentile, separated, z, form_word,
+            reliability_6, reliability_season, appearances, basis
+       from player_form_metric
+      where player_code = $1
+      order by separated desc, sort_order`,
+    [code],
+  )
+  return {
+    appearances: Number(rows[0]?.appearances ?? 0),
+    basis: rows[0]?.basis ? String(rows[0].basis) : null,
+    metrics: rows.map((r) => ({
+      metric: String(r.metric ?? ''),
+      label: String(r.label ?? ''),
+      shortLabel: String(r.short_label ?? ''),
+      decimals: Number(r.decimals ?? 1),
+      asPercent: Boolean(r.as_percent),
+      window: num(r.window_mean),
+      season: num(r.season_mean),
+      delta: num(r.delta),
+      stdError: num(r.std_error),
+      rankEarned: Boolean(r.rank_earned),
+      rank: r.metric_rank === null ? null : Number(r.metric_rank),
+      pool: r.pool === null ? null : Number(r.pool),
+      percentile: num(r.percentile),
+      separated: Boolean(r.separated),
+      z: num(r.z),
+      word: String(r.form_word ?? ''),
+      reliability6: num(r.reliability_6),
+      reliabilitySeason: num(r.reliability_season),
+    })),
+  }
+}
+
 export type PriceBandValue = {
   position: string
   priceBand: string
