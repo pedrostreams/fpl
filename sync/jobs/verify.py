@@ -20,7 +20,7 @@ COUNTS = (
     "player_snapshots", "player_price_events", "sync_runs",
     # Tier 2 enrichment
     "understat_team_match", "understat_shots", "understat_player_season",
-    "club_elo", "match_odds", "core_insights_player_match",
+    "club_elo", "match_odds", "market_odds", "core_insights_player_match",
     "player_external_ids", "unmatched_names",
 )
 
@@ -598,7 +598,8 @@ def run(
         # legitimately empty until the season starts (`trend_check` has one by design, with its
         # row count published beside it), and failing on those would make `verify` red for a
         # month for no reason.
-        for view in ("market_odds_check", "style_check", "trend_check"):
+        for view in ("market_odds_check", "fixture_percentage_check", "style_check",
+                     "trend_check"):
             rows = db.fetch(conn, f"select * from {view}")
             if not rows:
                 problems.append(f"{view}: returned no rows at all")

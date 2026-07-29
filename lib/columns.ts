@@ -187,6 +187,24 @@ export const COLUMNS: Column[] = [
   },
   { key: 'fixture_xg_for', label: 'xGF', full: 'Expected goals for the club this gameweek', group: 'Fixture', format: 'num2', direction: 'higher', scope: 'all' },
   { key: 'fixture_clean_sheets', label: 'xCS', full: 'Expected clean sheets for the club this gameweek', group: 'Fixture', format: 'num2', direction: 'higher', scope: 'all' },
+  // The same three numbers allaboutfpl leads every captaincy article with. They are not new
+  // data — `captain_picks` has computed them since 0012 — they are the existing model stated as
+  // a percentage, which carries its own reference point where `0.64` does not.
+  {
+    key: 'p_team_scores', label: 'G1+', full: 'Chance the club scores at least once this gameweek',
+    group: 'Fixture', format: 'pct0', direction: 'higher', scope: 'all',
+    why: 'From the Elo model, not a market price — the market does not price a Premier League fixture this far out. Over a double gameweek it is the chance of scoring in either match, not the sum.',
+  },
+  {
+    key: 'p_team_scores_2plus', label: 'G2+', full: 'Chance the club scores twice or more this gameweek',
+    group: 'Fixture', format: 'pct0', direction: 'higher', scope: 'all',
+    why: 'The gap between this and G1+ is where a captain is decided: a side that scores once is a return, a side that scores twice is a haul.',
+  },
+  {
+    key: 'p_clean_sheet', label: 'CS%', full: 'Chance the club keeps at least one clean sheet this gameweek',
+    group: 'Fixture', format: 'pct0', direction: 'higher', scope: 'all',
+    why: 'A probability, so it cannot exceed 100%. xCS beside it is the expected *number* of clean sheets and can exceed 1 over a double — that is the column to read for a doubling club.',
+  },
   {
     key: 'opponent_rank', label: 'Opp rk', full: 'The opponent’s league rank in the dimension this position exploits — 1 is strongest',
     group: 'Fixture', format: 'rankOf20', direction: 'higher', scope: 'all',
@@ -286,7 +304,7 @@ export const PRESETS: Preset[] = [
     columns: [
       'price', 'minutes_share', 'goals_scored', 'expected_goals', 'non_penalty_xg_per_90',
       'shots_per_90', 'shots_in_box_per_90', 'big_chances_per_90', 'head_xg_per_90',
-      'goals_minus_xg', 'penalties_order', 'opponents', 'fixture_rank', 'opponent_rank',
+      'goals_minus_xg', 'penalties_order', 'opponents', 'fixture_rank', 'p_team_scores_2plus',
     ],
     filters: { positions: ['MID', 'FWD'], reliableOnly: true },
     sort: { key: 'non_penalty_xg_per_90', desc: true },
@@ -310,7 +328,7 @@ export const PRESETS: Preset[] = [
     columns: [
       'price', 'minutes_share', 'clean_sheets', 'xgc_per_90', 'defcon_per_90',
       'defensive_contribution', 'bps_per_90', 'head_xg_per_90', 'corners_order',
-      'team_corner_xg', 'team_xga_per_match', 'opponents', 'fixture_rank', 'fixture_clean_sheets',
+      'team_corner_xg', 'team_xga_per_match', 'opponents', 'fixture_rank', 'p_clean_sheet',
     ],
     filters: { positions: ['DEF'], reliableOnly: true },
     sort: { key: 'defcon_per_90', desc: true },
@@ -322,7 +340,7 @@ export const PRESETS: Preset[] = [
     columns: [
       'price', 'minutes_share', 'saves', 'clean_sheets', 'goals_conceded', 'xgc_per_90',
       'bps_per_90', 'points_per_million', 'team_clean_sheet_pct', 'team_xga_per_match',
-      'opponents', 'fixture_rank', 'fixture_clean_sheets', 'opponent_rank',
+      'opponents', 'fixture_rank', 'p_clean_sheet', 'opponent_rank',
     ],
     filters: { positions: ['GKP'], reliableOnly: true },
     sort: { key: 'xgc_per_90', desc: false },
@@ -353,11 +371,12 @@ export const PRESETS: Preset[] = [
   {
     key: 'fixtures',
     name: 'Fixtures',
-    blurb: 'This gameweek, ranked by how kind the draw is for the position',
+    blurb: 'This gameweek as percentages — the chance of a goal, of two, and of a clean sheet',
     columns: [
-      'price', 'minutes_share', 'opponents', 'fixture_count', 'fixture_difficulty',
-      'fixture_rank', 'fixture_xg_for', 'fixture_clean_sheets', 'opponent_rank',
-      'team_xg_per_match', 'team_xga_per_match', 'xgi_per_90',
+      'price', 'minutes_share', 'opponents', 'fixture_count',
+      'p_team_scores', 'p_team_scores_2plus', 'p_clean_sheet',
+      'fixture_rank', 'fixture_difficulty', 'fixture_xg_for', 'fixture_clean_sheets',
+      'opponent_rank', 'team_xg_per_match', 'team_xga_per_match', 'xgi_per_90',
     ],
     sort: { key: 'fixture_rank', desc: true },
   },

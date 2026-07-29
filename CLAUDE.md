@@ -236,11 +236,16 @@ URL. Three pieces:
 - `saved_views` + `saveView` in `lib/actions.ts` — the user's own compositions. Presets stay in
   code so the type system checks them against columns that exist.
 
-Payload note: everything ships at once so a column picker never fetches. Measured, not assumed:
-89 columns × 558 players is **53 KB gzipped** as columnar JSON, and the whole `/players`
-document is **142 KB gzipped** — the RSC payload carries the data twice, once as HTML and once
-as hydration props. The old single-view `/scout` was 109 KB. Don't "optimise" without measuring
-the compressed size first.
+Payload note: everything ships at once so a column picker never fetches. Measured, not assumed —
+and **re-measured 2026-07-29, because the previous figure had gone stale**: a production
+`/players?view=overview` is **172 KB gzipped**, not the 142 KB recorded when the catalogue held
+89 columns. The RSC payload carries the data twice, once as HTML and once as hydration props.
+`?view=fixtures` is 136 KB and `?view=defenders` 103 KB, so the view chosen matters more than the
+column count. The three fixture-percentage columns added in 0025 account for **2.4 KB** of the
+total: they hold one distinct value per club, so 11.3 KB raw compresses to 1.2 KB. Attribute
+growth by measuring the columns you added rather than by subtracting from a remembered baseline —
+that is how 2.4 KB nearly got blamed for 30 KB. Don't "optimise" without measuring the compressed
+size first, and re-measure the baseline while you are there.
 
 **A club's style is a measurement with an error bar, and two separate gates decide what may be
 shown.** Migrations 0021/0022 + `components/team-style.tsx`. The rule that is easy to get wrong:
