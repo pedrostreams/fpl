@@ -224,6 +224,36 @@ come from.
 
 ---
 
+### Ranking versus naming — two gates, not one
+
+The club style section
+([0021_team_style.sql](../../supabase/migrations/0021_team_style.sql)) added a rule the player
+percentiles do not have, because it turned out to be a different question asked twice.
+
+- **A rank needs the ORDERING to be reliable.** `reliability` compares real between-club spread
+  against the noise in one club's own figure, so it is a statement about the whole ordering. Below
+  0.60, `metric_rank` comes back **null** and no component can render it. Expected goals conceded
+  sits at 0.49 — over a full season, "this club concedes fewer expected goals" is close to a coin
+  flip — and dead-ball share at the same.
+- **Naming ONE club needs only that club's own error bar.** `separated` is
+  |value − league mean| ≥ 2 × that club's standard error, and it holds at any reliability. Arsenal
+  sit 5.2 error bars below the league on xGA. The rank is still refused; the sentence is not.
+- **Where the two disagree, say so.** Printing the metric-level verdict alone made Newcastle's page
+  read "leans on set pieces" above a row saying "varies match to match". Both true, and together
+  they scan as a retraction. Those seven club-metric pairs print *"varies, but clear of the
+  league"* instead. `standing_word` in SQL, never assembled in the component.
+- **A value with no rank is not an absent value.** No `.heat-null` hatching here — the number is
+  present, only its ordering is missing. The `heat` class is left off entirely rather than passed
+  `--p: 0`, which would render every unranked cell as the worst in the league.
+- **Reliability is printed in words, never as a coefficient.** *"holds all season"* /
+  *"fairly consistent"* / *"varies match to match"*. `reliability_tier` ships alongside so a
+  component can style the three cases without containing any of the three strings — which is what
+  keeps the wording a measurement rather than an editorial choice sitting in a React file.
+
+Full derivation in [docs/feat/trend-claims.md](../../docs/feat/trend-claims.md).
+
+---
+
 ### Charts
 
 [components/scatter.tsx](../../components/scatter.tsx) is the only chart primitive. Anything

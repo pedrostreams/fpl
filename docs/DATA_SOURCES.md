@@ -252,6 +252,44 @@ be guessed from the coordinate — all 92 sit at exactly (0.885, 0.500) with mea
 never overwrites, so it becomes a no-op if `soccerdata` fixes its mapping. `verify` fails if any
 `situation` or `body_part` goes NULL again.
 
+**The repaired enum values are space-separated, and the table comment lies.**
+`understat_shots.situation` holds `'Open Play'`, `'From Corner'`, `'Set Piece'`,
+`'Direct Freekick'`, `'Penalty'`; `result` holds `'Own Goal'`. The comment on the column in
+migration 0002 still shows the pre-repair CamelCase (`SetPiece`), which is how a set-piece query
+came back all zeros while looking perfectly correct. Query the real values, or `group by situation`
+first.
+
+#### Derived from it: how reliable is a club's season figure?
+
+`team_style_metric` and `team_style_reliability`
+([0021_team_style.sql](../../supabase/migrations/0021_team_style.sql)) turn these per-match series
+into season figures **with their own error bars**, because the answer to "is this a property of the
+club or is it noise" turned out to differ per metric and to decide what the club page may show.
+
+Reliability of a k-match club mean, from a variance decomposition over all 646 club-matches
+(2026-07-29 — recomputed by the views, so treat these as a dated record, not constants):
+
+| Metric | rel(38) | rel(6) |
+|---|---|---|
+| Deep completions created | 0.85 | 0.48 |
+| Shots taken | 0.79 | 0.37 |
+| PPDA | 0.78 | 0.36 |
+| Expected goals for | 0.78 | 0.36 |
+| Shots conceded | 0.75 | 0.32 |
+| Deep completions conceded | 0.74 | 0.31 |
+| Dead-ball share of npxG | 0.49 | — |
+| **Expected goals conceded** | **0.49** | 0.13 |
+
+Two consequences worth knowing before building on these numbers:
+
+- **`rel(6)` is 0.13–0.48.** A six-match club mean is about a third signal. Any feature phrased as
+  "their recent form" is mostly noise, which is what shrank the trend layer to the ±50% class.
+- **Expected goals conceded barely separates clubs even over a full season.** `/teams` shades xGA
+  and the Defenders and Goalkeepers views rank on xGC, and both are weaker than they look. It also
+  vindicates building `fixture_difficulty` on Elo rather than on xGA.
+
+`scripts/probe/prove_style_claims.py` re-derives all of it independently and needs `DATABASE_URL`.
+
 Understat is described across 2026 sources as one of the last free xG sources standing.
 Treat it as valuable but single-point-of-failure: cache raw responses on disk so a
 future outage doesn't erase history we already fetched.
@@ -458,6 +496,8 @@ Which source answers each thing you asked for:
 | **Who rises/falls in price in the next 24h** | **Our own `player_snapshots` time series** (net-transfer velocity) | FPL `price_change_percent`, `transfers_in/out_event` |
 | Which teams are performing | Understat team xG/xGA rolling | ClubElo, odds-implied strength |
 | **Which teams play defensive football** | **Understat `ppda` + `deep_completions`** | xGA per match, O/U 2.5 odds |
+| **Whose defenders and target men are worth owning** | **Understat `situation` → dead-ball share of npxG** (`team_style_metric`) | corner/set-piece/free-kick xG in `team_dead_ball` |
+| **How much to trust any of the above** | **`team_style_reliability`** — the variance decomposition, recomputed, never a stored constant | `prove_style_claims.py` re-derives it in Python |
 | Fixture difficulty (better than FDR) | **ClubElo**, via the fitted model in migration 0007 | football-data.co.uk odds as the *calibration target*, FPL `difficulty` for comparison |
 | Who reliably hits the DEFCON threshold | FPL `defensive_contribution_per_90` + components | Sofascore `tackles`/`interceptions`/`clearances` |
 | Set-piece and penalty threat | FPL `penalties_order` / `*_freekicks_order` / corners | Understat `situation` on shot events |

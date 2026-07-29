@@ -2,9 +2,16 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PlayerPhoto } from '@/components/player-photo'
 import { TeamBadge } from '@/components/team-badge'
+import { TeamStyleBody } from '@/components/team-style'
 import { COLUMNS_BY_KEY } from '@/lib/columns'
-import { POSITION_VAR, fmt, fmtInt, fmtPct, fmtPrice, formatCell, ordinal } from '@/lib/format'
-import { getSeasonContext, getTeamForm, getTeamProfile, getTeamSquad } from '@/lib/queries'
+import { POSITION_VAR, fmt, fmtInt, fmtPct, formatCell, ordinal } from '@/lib/format'
+import {
+  getSeasonContext,
+  getTeamForm,
+  getTeamProfile,
+  getTeamSquad,
+  getTeamStyle,
+} from '@/lib/queries'
 
 export const revalidate = 300
 
@@ -60,11 +67,12 @@ export default async function TeamPage({ params }: { params: Promise<{ code: str
   const code = Number(raw)
   if (!Number.isInteger(code) || code <= 0) notFound()
 
-  const [team, form, squad, ctx] = await Promise.all([
+  const [team, form, squad, ctx, style] = await Promise.all([
     getTeamProfile(code),
     getTeamForm(code, 10),
     getTeamSquad(code),
     getSeasonContext(),
+    getTeamStyle(code),
   ])
   if (!team) notFound()
 
@@ -125,44 +133,65 @@ export default async function TeamPage({ params }: { params: Promise<{ code: str
       )}
 
       {hasStyle && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {/* ---- style ---- */}
+        <>
+          {/*
+            The style section. Season figures rather than form, because a 6-match club mean is
+            0.13-0.48 signal and a 38-match mean is 0.49-0.85 — measured, in
+            docs/feat/trend-claims.md. Groups are ordered by how firm the property is rather
+            than by convention, so creation leads: what a side creates holds up measurably
+            better than what it concedes.
+          */}
           <Section
             title="How they play"
-            note={`${ctx.statsSeason}, from Understat. Ranks are out of the 17 clubs with a top-flight record — the three promoted sides have none.`}
+            note={`${ctx.statsSeason}, all 38 matches, from Understat. Ranks are out of the 17 clubs with a top-flight record — the three promoted sides have none. A metric whose league ordering is no better than chance shows its value and no rank.`}
           >
-            <div className="grid grid-cols-3 gap-4">
-              <Stat label="Attack rank" value={ordinal(n('attacking_rank'))} />
-              <Stat label="Defence rank" value={ordinal(n('defensive_rank'))} />
-              <Stat label="Press rank" value={ordinal(n('press_intensity_rank'))} />
-              <Stat label="Goals" value={fmtInt(n('goals'))} />
-              <Stat label="Conceded" value={fmtInt(n('goals_conceded'))} />
-              <Stat label="xG diff" value={fmt(n('xg_difference'), 1)} />
-              <Stat label="npxG/match" value={fmt(n('np_xg_per_match'), 2)} hint="Excluding penalties" />
-              <Stat label="Deep passes" value={fmt(n('deep_completions'), 1)} hint="Completed within 20 m of goal, per match" />
-              <Stat
-                label="xPts"
-                value={fmt(n('expected_points'), 1)}
-                hint="Expected points from the same model. Compare with the real total above — the gap is luck."
-              />
-            </div>
+            <TeamStyleBody style={style} statsSeason={ctx.statsSeason} />
           </Section>
 
-          {/* ---- set pieces ---- */}
-          <Section
-            title="Set-piece threat"
-            note="What decides whether this club's defenders and target men are worth owning. Shots from corners, not corners won — Understat records the shot, and the shot is what scores points."
-          >
-            <div className="grid grid-cols-3 gap-4">
-              <Stat label="Corner xG" value={fmt(n('corner_xg'), 2)} />
-              <Stat label="Corner goals" value={fmtInt(n('corner_goals'))} />
-              <Stat label="Corner shots" value={fmtInt(n('corner_shots'))} />
-              <Stat label="Header xG" value={fmt(n('head_xg'), 2)} />
-              <Stat label="Header goals" value={fmtInt(n('head_goals'))} />
-              <Stat label="Headed shots" value={fmtInt(n('head_shots'))} />
-            </div>
-          </Section>
-        </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* ---- the rest of the season, unchanged ---- */}
+            <Section
+              title="Season totals"
+              note="The raw counts behind the rates above. xPts is the same model's expected points — the gap against the real total is luck."
+            >
+              <div className="grid grid-cols-3 gap-4">
+                <Stat label="Goals" value={fmtInt(n('goals'))} />
+                <Stat label="Conceded" value={fmtInt(n('goals_conceded'))} />
+                <Stat label="xG diff" value={fmt(n('xg_difference'), 1)} />
+                <Stat label="npxG/match" value={fmt(n('np_xg_per_match'), 2)} hint="Excluding penalties" />
+                <Stat label="Clean sheets" value={fmtInt(n('clean_sheets'))} />
+                <Stat
+                  label="xPts"
+                  value={fmt(n('expected_points'), 1)}
+                  hint="Expected points from the same model. Compare with the real total above — the gap is luck."
+                />
+              </div>
+            </Section>
+
+            {/* ---- set pieces: where the dead-ball threat comes from ---- */}
+            <Section
+              title="Set-piece threat"
+              note="Where the dead-ball share above comes from. Shots from corners, not corners won — Understat records the shot, and the shot is what scores points."
+            >
+              <div className="grid grid-cols-3 gap-4">
+                <Stat label="Corner xG" value={fmt(n('corner_xg'), 2)} />
+                <Stat label="Corner goals" value={fmtInt(n('corner_goals'))} />
+                <Stat label="Corner shots" value={fmtInt(n('corner_shots'))} />
+                <Stat
+                  label="Set-piece xG"
+                  value={fmt(style.deadBall?.set_piece_xg ?? null, 2)}
+                  hint="Open set pieces other than corners — throw-ins and indirect free kicks worked into the box."
+                />
+                <Stat
+                  label="Free-kick xG"
+                  value={fmt(style.deadBall?.free_kick_xg ?? null, 2)}
+                  hint="Direct free kicks, shot at goal."
+                />
+                <Stat label="Header xG" value={fmt(n('head_xg'), 2)} />
+              </div>
+            </Section>
+          </div>
+        </>
       )}
 
       {/* ---- form ---- */}

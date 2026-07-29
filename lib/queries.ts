@@ -423,6 +423,248 @@ export async function getTeamForm(code: number, limit = 38): Promise<FormMatch[]
   }))
 }
 
+// ---------------------------------------------------------------------------------------
+// Playing style — migrations 0021 and 0022
+// ---------------------------------------------------------------------------------------
+
+/**
+ * One measured style axis for one club.
+ *
+ * `displayValue` and `reliabilityWord` arrive pre-rendered from SQL on purpose. The number of
+ * decimals is a property of the metric, and the reliability wording is a function of a
+ * measurement — putting either in a component would make it a literal that no check can see.
+ * `reliabilityTier` exists so the component can style the three cases without containing any
+ * of the three strings.
+ *
+ * `rank` is null whenever the metric's reliability does not support an ordering, so a caller
+ * cannot render a rank the data will not carry. `separated` is the other gate and answers a
+ * different question: whether THIS club stands clear of the league by its own error bar.
+ */
+export type StyleMetric = {
+  metric: string
+  label: string
+  shortLabel: string
+  unit: string
+  blurb: string | null
+  group: string
+  groupOrder: number
+  sortOrder: number
+  direction: string
+  /**
+   * What the rank is a rank *at*, when "best" is not the answer.
+   *
+   * Null for every metric with a better end, where "3rd of 17" is unambiguous. Set for PPDA,
+   * which orders meaningfully (rank 1 is the most aggressive press) without one end being
+   * better — so "2nd of 17" would beg the question.
+   */
+  rankNoun: string | null
+  /** The same, counted from the other end — "least aggressive" for PPDA. */
+  rankNounLow: string | null
+  value: number | null
+  displayValue: string | null
+  leagueMean: number | null
+  displayLeagueMean: string | null
+  stdError: number | null
+  rank: number | null
+  pool: number | null
+  percentile: number | null
+  reliability: number | null
+  reliabilityWord: string | null
+  /**
+   * What to print beside the number on one club's page.
+   *
+   * Differs from `reliabilityWord` only where the two gates disagree: a metric too noisy to
+   * order the league can still have a club standing clear of it, and printing the metric-level
+   * word alone read as a retraction of the headline right above it.
+   */
+  standingWord: string | null
+  reliabilityTier: number | null
+  rankEarned: boolean
+  separationZ: number | null
+  separated: boolean
+  matches: number | null
+}
+
+export type StyleGroup = {
+  group: string
+  title: string
+  note: string
+  metrics: StyleMetric[]
+}
+
+export type StyleRead = {
+  summary: string | null
+  positionHint: string | null
+  claims: number | null
+}
+
+export type TeamTrend = {
+  metric: string
+  label: string
+  unit: string
+  windowN: number | null
+  windowsHeld: number | null
+  windowMean: number | null
+  seasonMean: number | null
+  deltaPct: number | null
+  z: number | null
+  directionWord: string | null
+  basis: string | null
+  oppositionGap: number | null
+  season: string | null
+  phrase: string | null
+}
+
+export type EloDrift = {
+  elo: number | null
+  eloAsOf: string | null
+  drift30: number | null
+  drift90: number | null
+  goalEffect30Pct: number | null
+  goalEffect90Pct: number | null
+  notable30: boolean
+  notable90: boolean
+  directionWord: string | null
+}
+
+export type TeamStyle = {
+  groups: StyleGroup[]
+  read: StyleRead | null
+  trends: TeamTrend[]
+  drift: EloDrift | null
+  deadBall: Record<string, number | null> | null
+}
+
+/**
+ * Everything the style section renders, for one club.
+ *
+ * Grouped here rather than in the page because the group order is a measured fact — creation
+ * leads because it is the firmest property in the data — and `style_group` is where that
+ * order is defined.
+ */
+export async function getTeamStyle(code: number): Promise<TeamStyle> {
+  const [metrics, groups, read, trends, drift, deadBall] = await Promise.all([
+    query<Record<string, unknown>>(
+      `select m.* from team_style_metric m
+       where m.team_code = $1 and m.season = (select stats_season from season_context)
+       order by m.group_order, m.sort_order`,
+      [code],
+    ),
+    query<Record<string, unknown>>('select * from style_group order by group_order'),
+    query<Record<string, unknown>>(
+      `select summary, position_hint, claims from team_style_read
+       where team_code = $1 and season = (select stats_season from season_context)`,
+      [code],
+    ),
+    // Ordered so that a genuinely current claim outranks one about a finished season, then by
+    // how loudly it reads. The page shows at most two.
+    query<Record<string, unknown>>(
+      `select metric, label, unit, window_n, windows_held, window_mean, season_mean,
+              delta_pct, z, direction_word, basis, opposition_gap, season, phrase
+       from team_trend where team_code = $1
+       order by (basis = 'in_season') desc, abs(z) desc`,
+      [code],
+    ),
+    query<Record<string, unknown>>(
+      `select elo, elo_as_of, drift_30, drift_90, goal_effect_30_pct, goal_effect_90_pct,
+              notable_30, notable_90, direction_word
+       from team_elo_drift where team_code = $1`,
+      [code],
+    ),
+    query<Record<string, unknown>>(
+      `select * from team_dead_ball
+       where team_code = $1 and season = (select stats_season from season_context)`,
+      [code],
+    ),
+  ])
+
+  const shaped: StyleMetric[] = metrics.map((r) => ({
+    metric: String(r.metric),
+    label: String(r.label ?? ''),
+    shortLabel: String(r.short_label ?? ''),
+    unit: String(r.unit ?? ''),
+    blurb: (r.blurb as string) ?? null,
+    group: String(r.metric_group ?? ''),
+    groupOrder: Number(r.group_order ?? 0),
+    sortOrder: Number(r.sort_order ?? 0),
+    direction: String(r.direction ?? 'none'),
+    rankNoun: (r.rank_noun as string) ?? null,
+    rankNounLow: (r.rank_noun_low as string) ?? null,
+    value: num(r.value),
+    displayValue: (r.display_value as string) ?? null,
+    leagueMean: num(r.league_mean),
+    displayLeagueMean: (r.display_league_mean as string) ?? null,
+    stdError: num(r.std_error),
+    rank: num(r.metric_rank),
+    pool: num(r.pool),
+    percentile: num(r.percentile),
+    reliability: num(r.reliability),
+    reliabilityWord: (r.reliability_word as string) ?? null,
+    standingWord: (r.standing_word as string) ?? null,
+    reliabilityTier: num(r.reliability_tier),
+    rankEarned: Boolean(r.rank_earned),
+    separationZ: num(r.separation_z),
+    separated: Boolean(r.separated),
+    matches: num(r.matches),
+  }))
+
+  return {
+    groups: groups
+      .map((g) => ({
+        group: String(g.metric_group),
+        title: String(g.title ?? ''),
+        note: String(g.note ?? ''),
+        metrics: shaped.filter((m) => m.group === String(g.metric_group)),
+      }))
+      // A group with no metrics is a group that was registered and never populated. Dropping
+      // it is right; rendering an empty titled box is not.
+      .filter((g) => g.metrics.length > 0),
+    read: read.length
+      ? {
+          summary: (read[0].summary as string) ?? null,
+          positionHint: (read[0].position_hint as string) ?? null,
+          claims: num(read[0].claims),
+        }
+      : null,
+    trends: trends.map((r) => ({
+      metric: String(r.metric),
+      label: String(r.label ?? ''),
+      unit: String(r.unit ?? ''),
+      windowN: num(r.window_n),
+      windowsHeld: num(r.windows_held),
+      windowMean: num(r.window_mean),
+      seasonMean: num(r.season_mean),
+      deltaPct: num(r.delta_pct),
+      z: num(r.z),
+      directionWord: (r.direction_word as string) ?? null,
+      basis: (r.basis as string) ?? null,
+      oppositionGap: num(r.opposition_gap),
+      season: (r.season as string) ?? null,
+      phrase: (r.phrase as string) ?? null,
+    })),
+    drift: drift.length
+      ? {
+          elo: num(drift[0].elo),
+          eloAsOf: drift[0].elo_as_of ? String(drift[0].elo_as_of) : null,
+          drift30: num(drift[0].drift_30),
+          drift90: num(drift[0].drift_90),
+          goalEffect30Pct: num(drift[0].goal_effect_30_pct),
+          goalEffect90Pct: num(drift[0].goal_effect_90_pct),
+          notable30: Boolean(drift[0].notable_30),
+          notable90: Boolean(drift[0].notable_90),
+          directionWord: (drift[0].direction_word as string) ?? null,
+        }
+      : null,
+    deadBall: deadBall.length
+      ? Object.fromEntries(
+          Object.entries(deadBall[0])
+            .filter(([k]) => k !== 'season' && k !== 'team_code')
+            .map(([k, v]) => [k, num(v)]),
+        )
+      : null,
+  }
+}
+
 /** The squad, as `player_wide` rows so the club page can reuse the table's formatters. */
 export async function getTeamSquad(code: number): Promise<Record<string, unknown>[]> {
   const rows = await query<Record<string, unknown>>(

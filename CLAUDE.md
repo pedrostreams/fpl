@@ -24,6 +24,7 @@ node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON \
      --import ./scripts/probe/_ts_resolve.mjs scripts/probe/prove_rank_detail.mjs
 
 python scripts/probe/calibrate_elo_fixtures.py   # refit the fixture-difficulty constants
+python scripts/probe/prove_style_claims.py       # re-derive every style reliability, needs DB
 python scripts/migrate.py                        # apply all migrations (idempotent)
 
 python -m sync.cli all --dry-run                 # FPL core: dimensions, history, snapshot
@@ -34,10 +35,19 @@ python -m sync.cli verify                        # post-sync sanity + storage gr
 ```
 
 There is no test runner. `--dry-run`, the probe scripts, and `verify` are the verification
-path. The three `prove_*` scripts run without a database or network, so they gate CI. The
-newest is JavaScript rather than Python because it asserts on `lib/rank.ts` directly — Node
+path. Three of the four `prove_*` scripts run without a database or network, so they gate CI. One
+of those is JavaScript rather than Python because it asserts on `lib/rank.ts` directly — Node
 strips the type annotations, and `scripts/probe/_ts_resolve.mjs` supplies the file extensions
-and the `@/` alias that TypeScript imports omit.
+and the `@/` alias that TypeScript imports omit. `prove_style_claims.py` is the exception that
+needs `DATABASE_URL`: what it asserts are properties of 646 club-matches, not of a fixture, so it
+is run by hand like `calibrate_elo_fixtures.py`.
+
+**`select * from <name>_check;` is how a view is verified**, and every boolean in one must be
+true. Two traps that made a check look like it passed when it asserted nothing:
+`bool_and` over **zero rows is NULL**, which reads as a pass in a table of booleans — so publish
+the row count beside any check whose `where` clause can go empty. And a check that restates the
+expression it is checking proves only that SQL is deterministic; assert against an independent
+derivation, which is what `prove_style_claims.py` exists to be.
 
 **Nothing is `finished` until 2026-08-21**, so every code path keyed on an in-progress season
 is unexercised by the data. `.claude/context/FIX_WHEN_LIVE.md` is the go-live checklist — 74
@@ -229,6 +239,22 @@ Payload note: everything ships at once so a column picker never fetches. Measure
 document is **142 KB gzipped** — the RSC payload carries the data twice, once as HTML and once
 as hydration props. The old single-view `/scout` was 109 KB. Don't "optimise" without measuring
 the compressed size first.
+
+**A club's style is a measurement with an error bar, and two separate gates decide what may be
+shown.** Migrations 0021/0022 + `components/team-style.tsx`. The rule that is easy to get wrong:
+**reliability governs the league ORDERING, not whether an individual club can be named.** A metric
+too noisy to rank (xGA and dead-ball share, both 0.49) still has clubs sitting five error bars
+clear of the league, so `metric_rank` comes back null while `separated` stays true, and the page
+prints the value and the sentence without the rank. Conflating the two silenced the axis that
+answers "whose defenders are worth owning". Full reasoning in `docs/feat/trend-claims.md`;
+the design rules in DESIGN.md §4.
+
+Two numbers from it worth carrying around: **`rel(6)` is 0.13–0.48**, so any feature phrased as
+"recent form" over six matches is about a third signal — that is why the trend layer only admits
+changes of roughly ±50%. And **xGA is 0.49 over a full season**, which weakens `/teams` shading it
+and the Defenders/Goalkeepers views ranking on xGC, and vindicates `fixture_difficulty` being
+built on Elo. Nothing is hardcoded: the reliabilities are recomputed by the views as matches
+accumulate, so the set of metrics that earn a rank should grow through the season.
 
 **A player is rendered by `components/player-identity.tsx`, everywhere.** Five copies existed —
 dashboard, captain panel, table cell, search result, gems card — and they disagreed about spacing,

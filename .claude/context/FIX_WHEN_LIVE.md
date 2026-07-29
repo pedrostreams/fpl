@@ -188,6 +188,31 @@ duplicate or delete a `fixtures` row inside a transaction, render, roll back.
 - [ ] Promoted clubs now have `team_style` rows → `team_style` covers 20 of 20, the
       promoted banner on `/teams` disappears by itself, and the opponent note on `/gems` stops
       reading "of 17" and "promoted, no top-flight record"
+- [ ] **Recompute the style reliabilities and see which metrics earn a rank.** Run
+      `python scripts/probe/prove_style_claims.py`, then `select * from team_style_reliability`.
+      `rel(k)` rises with k, so as this season's matches accumulate the set of metrics with
+      `rank_earned = true` should **grow** past the six it holds today. **If it does not, that is
+      a finding, not a non-event** — it would mean the 2025-26 figures were an unusually clean
+      season rather than a property of the metrics. The two candidates to watch are expected goals
+      conceded and dead-ball share, both at 0.49; a move above 0.60 makes their ranks appear on
+      `/team/[code]` with no code change, and the *"varies, but clear of the league"* wording will
+      stop appearing on its own. Nothing is hardcoded — this is a reading, not an edit
+- [ ] **The style section switches basis, and the trend layer wakes up.** `team_style_metric`
+      reads `stats_season`, so it keeps describing 2025-26 until `season_context` moves. Check
+      that the club page's "How they play" note names the season the numbers actually come from,
+      and that `team_trend`'s `basis` flips to `in_season` only once a club has 20 matches —
+      `trend_check.premature_in_season` must stay 0 throughout. Until then the honest current
+      signal is the Elo drift, which is the one thing on that page that is about now
+- [ ] **The 30-day Elo drift starts moving.** It is exactly 0.0 for all 20 clubs in preseason
+      because ClubElo carries a rating forward when nobody plays, so `notable_30` is false for
+      everyone. Once matches resume, confirm `team_elo_drift.notable_30` picks up a handful of
+      clubs rather than all 20 (the threshold is ≥3% on expected goals, which is 25 Elo). If
+      everyone is notable, the threshold is too tight for in-season volatility
+- [ ] **Opponent Elo coverage becomes complete.** Today 102 of 646 club-matches have no opponent
+      Elo, because last season's relegated clubs have no `teams.code`. Within 2026-27 every
+      opponent is in `teams`, so `team_trend.window_opp_missing` should reach 0 and the
+      opposition control should start appearing on more claims. While it is non-zero the control
+      is deliberately withheld, since the unrated opponents are exactly the weak ones
 - [ ] Storage growth on trend for the season → the growth query in `docs/SYNC_PLAN.md` §8
 
 ## 7. End of season
@@ -207,6 +232,19 @@ Run this whole block once after GW1 and once after GW5. Each item is something t
 
 ### `/player/[code]` and `/team/[code]`
 
+- [ ] **The style section's rank column and reliability column still agree.** A rank must appear
+      only where the reliability supports it. `style_check.unreliable_never_ranked` and
+      `reliable_always_ranked` cover both directions, but eyeball one club too: an em dash in the
+      rank column beside *"varies match to match"* is correct, and an em dash beside *"holds all
+      season"* is a bug
+- [ ] **The read sentence and the position hint still agree.** `style_check.hint_traces_to_summary`
+      asserts every printed hint comes from a clause printed in the same sentence — this failed
+      once already, with Tottenham reading "creates little and rarely plays through the opponent
+      box → Defenders and target men", where the recommendation came from a claim the sentence
+      never showed
+- [ ] **A club with no separated axis still says so.** Three clubs get the empty state today
+      ("a mid-table style in every direction is a real answer"). If that count goes to zero, gate 2
+      has loosened; if it goes to twenty, something has broken in `separated`
 - [ ] **Shot map dot count equals the shot count above it.** The frame is adaptive because a
       fixed crop silently dropped seven shots taken from beyond 60 m while still counting them
 - [ ] Own goals stay out of the map and out of `player_shot_profile`. Understat files them
