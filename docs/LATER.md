@@ -4,7 +4,32 @@ Wishlist for Later
 2. More "analysis explanation". You should target Brentford now because their current trend is that they are not conceding shots. They have started season well etc. And other examples.
 3. [DONE 2026-07-28 — components/team-badge.tsx, keyed on teams.code, SVG] Implement team logo badges. I.e this is Everton (team Code = 11): https://resources.premierleague.com/premierleague25/badges/11.svg
 4. [DONE 2026-07-27 — /teams scatter + chart mode on /players] Would be cool to view some graphics. I.e I love the X, Y scatter plots with i.e expected goals on X axis and then expected  goals against on Y axis. And then each team is a dot. I love those both for teams and players. So would be great to have this. Also would need your help deciding which ones are useful. 
-5. Analyse this page:https://allaboutfpl.com to see if we can learn something. 
+5. [SHIPPED 2026-07-29 — all eight features, migrations 0023–0032, plus `/gw`. Research in
+   `docs/feat/allaboutfpl-learnings.md`; the build log in the PRD. Two of the doc's own premises
+   fell to measurement first: the rolling form window needed no risky cross-source join (one table
+   already had every per-match figure), and blank/double detection has nothing to detect yet
+   (760 flat club-gameweeks). The centrepiece advice — rotation pairs — measured out at 0.5 points
+   over six gameweeks, and that verdict now ships on the view as `gain_in_points`.]
+   Analyse this page:https://allaboutfpl.com to see if we can learn something.
+   Headline: their metric vocabulary is six numbers against our 89, and migration 0012 already
+   copied their captaincy method correctly. The gap is not data — it is a weekly order of
+   questions and a sell view. Seven features proposed, F1–F3 nearly free. Two correctness
+   findings: **2026/27 changed the BPS rules** (tackle penalty gone, CBI 1-per-3, keepers
+   restructured), so last season's `bps` is not comparable and it sits in the Defenders and
+   Goalkeepers presets; and **FPL itself ships a price-change progress page after the GW1
+   deadline**, which may make much of the planned price model redundant.
+
+   **Revised same day — Norsk Tipping (§7.1).** Peder raised it; there is **no API key**, it is a
+   public unauthenticated endpoint (`api.norsk-tipping.no`, Premier League = tournament `35887`,
+   club names already in English). That reverses §7's "no new odds source needed". GW1 is priced
+   two months ahead but **HUB only**; the deep set — `{Team} Totalt 0.5/1.5` (= their `% 1+/2+
+   goals`) and **`{Team} holder nullen`** (= clean-sheet odds) — appears ~2 days out and is
+   **per-competition**, so whether the PL gets it is unmeasured until a probe on 19–20 August.
+   **The API serves no history at all (204 before today), so odds are not backfillable** — same
+   class as `player_snapshots`, which is why the ingest is now F1 and has a deadline. It also
+   unblocks validating the Elo model on *unplayed* fixtures from GW1 instead of waiting for
+   `2627/E0.csv`. §7.2 answers the projection question: build `P(anytime return)` with a Brier
+   score, not a projected-points number — market carries the team term, so only minutes stays weak. 
 6. [DONE 2026-07-28 — components/player-identity.tsx, replaced five copies] One common player component (Photo, title, subtitle, position, club, upcoming opponent). Think Watchlist and Captain on dashboard + Players table (first column). For reuse and scalabiluity maybe it makes sense to merge into one shared component?
 7. [DONE 2026-07-28 — plus /prices, which was also a dead end] Redirect from Dashboard, Hidden Gems and Teams page to Player/Team profile page.
 8. [DONE 2026-07-28 — object-position 50% 15% + scale(1.6); the sources are torso portraits, not face shots] Player-photo is not contained inside circle. it actually looks like it's on top of the circle, not inside. 
