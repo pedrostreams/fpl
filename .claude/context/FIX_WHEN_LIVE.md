@@ -73,6 +73,13 @@ morning** — this hour is unrepeatable.
       (driven by `covers24h`, so this should already have flipped earlier)
 - [ ] `events` table: GW1 `is_current` flips → `select id, name, is_current, finished,
       deadline_time from events order by id limit 3`
+- [ ] **`entry/{id}/event/1/picks/` stops 404-ing** — the one path in `sync/jobs/manager.py` the
+      frozen data cannot reach. `python -m sync.cli manager --dry-run` → `detail.picks` carries
+      `players: 15` instead of `available: false`. Until this hour, `entry_picks_optional`'s
+      success branch has never executed. Checked 2026-07-29: this is also the *only* free route to
+      the squad — `my-team/{id}/` is 403 without a session cookie, `users.premierleague.com` no
+      longer resolves, and login is PingOne with no third-party client. See LATER.md §10; a "my
+      team" page is unblocked from this moment with no auth work.
 
 ## 3. The first price change — the night of 2026-08-21/22, ~01:00–03:00 UTC
 
