@@ -44,8 +44,21 @@ and the `@/` alias that TypeScript imports omit. `prove_style_claims.py` is the 
 needs `DATABASE_URL`: what it asserts are properties of 646 club-matches, not of a fixture, so it
 is run by hand like `calibrate_elo_fixtures.py`.
 
+**`(select season from season_context)` is a silent tautology and reads as correct.**
+`season_context` has columns `current_season`, `stats_season`, `season_started` — there is no
+`season`. So inside a subquery whose outer scope has a `season` column (`player_seasons`,
+`player_season_totals`, `fixtures` — most of the schema), Postgres resolves the bare name as an
+**outer reference** and `ps.season = (select season from season_context)` becomes
+`ps.season = ps.season`. No error, no warning, and it only fails loudly where no outer column of
+that name is in scope. It is currently harmless because `player_seasons` holds one season; the day
+2025-26 is loaded, every join written this way fans out. Always name the column you mean. Found
+2026-07-29 in 0025's own check view, which had been reporting a pass on an unfiltered join.
+
 **`select * from <name>_check;` is how a view is verified**, and every boolean in one must be
-true. Two traps that made a check look like it passed when it asserted nothing:
+true. `python -m sync.cli verify` asserts every boolean in `market_odds_check`,
+`fixture_percentage_check`, `position_price_value_check`, `style_check` and `trend_check`
+wholesale, and reports NULLs rather than failing them — some are legitimately empty until the
+season starts. Two traps that made a check look like it passed when it asserted nothing:
 `bool_and` over **zero rows is NULL**, which reads as a pass in a table of booleans — so publish
 the row count beside any check whose `where` clause can go empty. And a check that restates the
 expression it is checking proves only that SQL is deterministic; assert against an independent

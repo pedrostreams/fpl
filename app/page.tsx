@@ -7,11 +7,13 @@ import { TeamBadge } from '@/components/team-badge'
 import { WatchButton } from '@/components/watch-button'
 import { fmt, fmtInt, fmtPct, fmtPrice, fmtSigned, relativeAge } from '@/lib/format'
 import { FixtureNote } from '@/components/fixture-note'
+import { tipRows } from '@/lib/tooltip'
 import {
   getCaptainPicks,
   getFormPlayers,
   getManager,
   getNextMatches,
+  getPositionPriceValue,
   getSeasonContext,
   getSnapshotCoverage,
   getSyncHealth,
@@ -44,7 +46,7 @@ function daysUntil(iso: string | null): number | null {
 export default async function Dashboard() {
   const [
     ctx, manager, watchlist, captains, attackRuns, defenceRuns, targets, form, matches,
-    coverage, health, watchedCodes,
+    coverage, health, watchedCodes, priceBands,
   ] = await Promise.all([
     getSeasonContext(),
     getManager(),
@@ -58,6 +60,7 @@ export default async function Dashboard() {
     getSnapshotCoverage(),
     getSyncHealth(),
     getWatchlistCodes(),
+    getPositionPriceValue(),
   ])
 
   const gw = captains[0]?.gameweek ?? matches[0]?.gameweek ?? null
@@ -469,6 +472,120 @@ export default async function Dashboard() {
         </Panel>
         </div>
       </div>
+
+      {priceBands.length > 0 && (() => {
+        // allaboutfpl asserts £5.0-5.5m defenders beat midfielders at the same price. Rather
+        // than repeat it, the view recomputes it, and this reads the answer back off the data
+        // so the sentence cannot go stale into a July number quoted in March.
+        const band = (pos: string, b: string) =>
+          priceBands.find((r) => r.position === pos && r.priceBand === b)
+        const def = band('DEF', '4.6-5.5')
+        const mid = band('MID', '4.6-5.5')
+        const best = priceBands.reduce(
+          (a, b) => ((b.medianPpm ?? 0) > (a.medianPpm ?? 0) ? b : a),
+          priceBands[0],
+        )
+        const maxMedian = Math.max(...priceBands.map((r) => r.medianPpm ?? 0), 0.0001)
+        return (
+          <Panel
+            title={`Value by price · ${ctx.statsSeason ?? 'last season'}`}
+            href="/players?view=enablers"
+            hrefLabel="Enablers"
+            lead={
+              def && mid ? (
+                <>
+                  At £4.6–5.5m, defenders returned{' '}
+                  <strong>{fmt(def.medianPpm, 1)}</strong> points per £m against midfielders&rsquo;{' '}
+                  <strong>{fmt(mid.medianPpm, 1)}</strong> — a median, so it is not one
+                  Milenković carrying the bucket. The best value in the game was{' '}
+                  <strong>
+                    {best.position} at £{best.priceBand}m
+                  </strong>
+                  .
+                </>
+              ) : undefined
+            }
+          >
+            <div className="flex flex-col">
+              {priceBands.map((r, i) => {
+                const prev = priceBands[i - 1]
+                const newPosition = !prev || prev.position !== r.position
+                // A mean far above the median means a handful of starters are carrying a bucket
+                // of bench filler. That is the £4.0m keeper, and it is the thing a reader most
+                // needs told — so it is a sentence, not a number to spot.
+                const carried = (r.ppm ?? 0) > (r.medianPpm ?? 0) * 2 && (r.players ?? 0) >= 8
+                return (
+                  <div
+                    key={`${r.position}-${r.priceBand}`}
+                    className={`flex items-center gap-2 py-1.5 ${
+                      newPosition && i > 0 ? 'mt-1 border-t pt-2.5' : 'border-b last:border-b-0'
+                    }`}
+                    data-tip={`${r.position} £${r.priceBand}m`}
+                    data-tip-value={`${fmt(r.medianPpm, 2)} median points per £m`}
+                    data-tip-rows={tipRows([
+                      ['Players', String(r.players)],
+                      ['Played 10+ matches', String(r.playersOverTenMatches)],
+                      ['Mean per £m', fmt(r.ppm, 2)],
+                      ['Best per £m', fmt(r.bestPpm, 2)],
+                      ['Average points', fmt(r.avgPoints, 1)],
+                      ['Bonus share', fmtPct(r.bonusSharePct, 1)],
+                    ])}
+                    data-tip-why={
+                      carried
+                        ? 'The mean is more than twice the median: a few starters are carrying a bucket that is mostly bench filler.'
+                        : undefined
+                    }
+                  >
+                    <span className="w-9 shrink-0 text-[11px] font-medium">
+                      {newPosition ? r.position : ''}
+                    </span>
+                    {/* w-20, not w-16: '£8.1-10.0' wraps at the narrower width and makes that
+                        one row taller than the rest. */}
+                    <span className="num w-20 shrink-0 whitespace-nowrap text-[12px]">
+                      £{r.priceBand}
+                    </span>
+                    <span
+                      className="num w-8 shrink-0 text-right text-[11px]"
+                      style={{ color: 'var(--faint)' }}
+                    >
+                      {r.players}
+                    </span>
+                    {/* Width is the share of the best median, not a percentile — an honest
+                        ratio rather than a borrowed heatmap semantic. */}
+                    <span className="flex h-2 flex-1 overflow-hidden rounded-full"
+                          style={{ background: 'var(--surface-2)' }}>
+                      <span
+                        style={{
+                          width: `${((r.medianPpm ?? 0) / maxMedian) * 100}%`,
+                          background: 'var(--accent)',
+                        }}
+                      />
+                    </span>
+                    <span className="num w-10 shrink-0 text-right text-[12px] font-medium">
+                      {fmt(r.medianPpm, 1)}
+                    </span>
+                    {carried && (
+                      <span
+                        className="w-3 shrink-0 text-[11px]"
+                        style={{ color: 'var(--faint)' }}
+                        aria-label="mean far above median"
+                      >
+                        !
+                      </span>
+                    )}
+                    {!carried && <span className="w-3 shrink-0" />}
+                  </div>
+                )
+              })}
+            </div>
+            <p className="text-[11px]" style={{ color: 'var(--faint)' }}>
+              Median points per £m of start-of-season price, recomputed on every render. Players
+              who left the league have no record here, so every figure is an upper bound — the
+              defender-versus-midfielder comparison is sounder than the levels.
+            </p>
+          </Panel>
+        )
+      })()}
 
       {manager && manager.seasons.length > 0 && (
         <Panel

@@ -598,8 +598,8 @@ def run(
         # legitimately empty until the season starts (`trend_check` has one by design, with its
         # row count published beside it), and failing on those would make `verify` red for a
         # month for no reason.
-        for view in ("market_odds_check", "fixture_percentage_check", "style_check",
-                     "trend_check"):
+        for view in ("market_odds_check", "fixture_percentage_check",
+                     "position_price_value_check", "style_check", "trend_check"):
             rows = db.fetch(conn, f"select * from {view}")
             if not rows:
                 problems.append(f"{view}: returned no rows at all")

@@ -369,6 +369,23 @@ export const PRESETS: Preset[] = [
     sort: { key: 'points_per_90', desc: true },
   },
   {
+    key: 'enablers',
+    name: 'Enablers',
+    // The criterion for a £4.0m defender is not output, it is whether he starts. allaboutfpl's
+    // own test is "featured in all 44 games and started in 43" — availability, nothing else.
+    // Measured caution that belongs on this screen: the median £4.0-4.5m keeper returned 0.13
+    // points per £m last season and the median cheap midfielder 0.44, so most of this pool is
+    // bench filler. Sorting by minutes share rather than by points is the whole point.
+    blurb: 'The cheap end, ranked by whether he actually plays — not by what he returns',
+    columns: [
+      'price', 'minutes_share', 'start_rate', 'minutes', 'chance_of_playing',
+      'total_points', 'points_per_million', 'defcon_per_90', 'xgc_per_90',
+      'opponents', 'p_clean_sheet', 'fixture_rank',
+    ],
+    filters: { priceMax: 4.5, availableOnly: true },
+    sort: { key: 'minutes_share', desc: true },
+  },
+  {
     key: 'fixtures',
     name: 'Fixtures',
     blurb: 'This gameweek as percentages — the chance of a goal, of two, and of a clean sheet',

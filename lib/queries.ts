@@ -698,6 +698,46 @@ export async function getSeasonContext(): Promise<SeasonContext> {
   }
 }
 
+export type PriceBandValue = {
+  position: string
+  priceBand: string
+  players: number
+  avgPoints: number | null
+  /** Mean points per £m of start-of-season price. */
+  ppm: number | null
+  /**
+   * Median points per £m, and the more honest of the two. The mean £4.0-4.5m keeper looks like
+   * 5.84 while the median is 0.13 — that bucket is bench filler with a few real starters in it,
+   * and only the median says so.
+   */
+  medianPpm: number | null
+  bestPpm: number | null
+  /** Share of the bucket's points that came from bonus, which the 2026/27 BPS changes rewrite. */
+  bonusSharePct: number | null
+  playersOverTenMatches: number
+}
+
+export async function getPositionPriceValue(): Promise<PriceBandValue[]> {
+  const rows = await query<Record<string, unknown>>(`
+    select position, price_band, players, avg_points, points_per_million,
+           median_points_per_million, best_points_per_million, bonus_share_pct,
+           players_over_10_matches
+    from position_price_value
+    order by element_type, band_order
+  `)
+  return rows.map((r) => ({
+    position: String(r.position ?? ''),
+    priceBand: String(r.price_band ?? ''),
+    players: Number(r.players ?? 0),
+    avgPoints: num(r.avg_points),
+    ppm: num(r.points_per_million),
+    medianPpm: num(r.median_points_per_million),
+    bestPpm: num(r.best_points_per_million),
+    bonusSharePct: num(r.bonus_share_pct),
+    playersOverTenMatches: Number(r.players_over_10_matches ?? 0),
+  }))
+}
+
 export type TargetRow = {
   playerCode: number
   webName: string

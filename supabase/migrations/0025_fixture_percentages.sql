@@ -270,10 +270,16 @@ select
   -- mathematics reached through a different aggregation, so disagreement means one of the two
   -- mishandled the gameweek grouping.
   (select count(*) from captain_picks)                                 as captain_rows,
+  -- `current_season`, spelled out. `(select season from season_context)` looks right and is a
+  -- silent tautology: `season_context` has no `season` column, so Postgres resolves the name as
+  -- an **outer reference** to `player_seasons.season` and the predicate becomes
+  -- `ps.season = ps.season`. It only errors where no outer column of that name is in scope.
+  -- Harmless while `player_seasons` holds one season; the moment 2025-26 is loaded the join
+  -- fans out and this check silently compares the wrong rows.
   (select coalesce(bool_and(abs(c.p_team_scores - f.p_team_scores) < 0.0002), true)
      from captain_picks c
      join player_seasons ps on ps.player_code = c.player_code
-                           and ps.season = (select season from season_context)
+                           and ps.season = (select current_season from season_context)
      join team_fixture_context f on f.team_code = ps.team_code
     where f.fixture_count = 1)                                         as agrees_with_captain_picks,
 
