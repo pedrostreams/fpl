@@ -44,6 +44,7 @@ export type ColumnGroup =
   | 'Set pieces'
   | 'Fixture'
   | 'Team'
+  | 'Composite'
   | 'Sample'
 
 export type Position = 'GKP' | 'DEF' | 'MID' | 'FWD'
@@ -231,13 +232,28 @@ export const COLUMNS: Column[] = [
   { key: 'team_deep_completions', label: 'Deep', full: 'Passes completed within 20 metres of the opposition goal', group: 'Team', format: 'num1', direction: 'higher', scope: 'all' },
   { key: 'team_attacking_rank', label: 'Tm atk', full: 'The club’s attacking rank — 1 is best', group: 'Team', format: 'rankOf20', direction: 'lower', scope: 'all' },
   { key: 'team_defensive_rank', label: 'Tm def', full: 'The club’s defensive rank — 1 is best', group: 'Team', format: 'rankOf20', direction: 'lower', scope: 'all' },
+
+  // --- Composite ----------------------------------------------------------------------
+  // Its own group because a composite is a different kind of thing from a measurement, and the
+  // picker should not imply otherwise by filing it next to xG. Currently one entry; a second
+  // would be `target_score`, which stays out until something needs it.
+  {
+    key: 'gem_score', label: 'Gem', full: 'Gem score — output, scarcity, value, fixture and minutes, equally weighted',
+    group: 'Composite', format: 'num3', direction: 'higher', scope: 'all',
+    why:
+      'Five ranks averaged, never raw quantities multiplied, so the metric with the widest ' +
+      'spread cannot quietly dominate. Ranked across the whole pool rather than within a ' +
+      'position, because its output component is already position-aware. Blank for anyone ' +
+      'outside the eligible pool — cold start, thin sample, unfit, or under a quarter of a ' +
+      'season — which is a different thing from scoring low.',
+  },
 ]
 
 export const COLUMNS_BY_KEY = new Map(COLUMNS.map((c) => [c.key, c]))
 
 export const GROUP_ORDER: ColumnGroup[] = [
   'Identity', 'Availability', 'Price & ownership', 'Returns', 'Rates',
-  'Chance quality', 'Creation', 'Set pieces', 'Fixture', 'Team', 'Sample',
+  'Chance quality', 'Creation', 'Set pieces', 'Fixture', 'Team', 'Composite', 'Sample',
 ]
 
 /** Columns every view carries regardless of what the user picked. */
@@ -359,14 +375,19 @@ export const PRESETS: Preset[] = [
   {
     key: 'differentials',
     name: 'Differentials',
-    blurb: 'Under 10% owned, fit, and a regular — what /gems used to be',
+    // This *is* the old /gems page. The route was retired in 0033 once `gem_score` became a
+    // column, because the two were one table with different columns and a different row filter —
+    // and the filter, not the page, was the differential part. Sorting on `gem_score` rather than
+    // `points_per_90` is what makes the retirement lossless: the composite ranks output, scarcity,
+    // value, fixture and minutes together, and a raw per-90 ranks none of them against each other.
+    blurb: 'Under 10% owned, fit, and a regular — ranked on the gem composite',
     columns: [
-      'price', 'selected_by_percent', 'minutes_share', 'total_points', 'points_per_90',
-      'xgi_per_90', 'defcon_per_90', 'xgc_per_90', 'points_per_million',
+      'price', 'selected_by_percent', 'gem_score', 'minutes_share', 'total_points',
+      'points_per_90', 'xgi_per_90', 'defcon_per_90', 'xgc_per_90', 'points_per_million',
       'opponents', 'fixture_rank', 'opponent_rank',
     ],
     filters: { ownedMax: 10, availableOnly: true, reliableOnly: true, minutesShareMin: 0.25 },
-    sort: { key: 'points_per_90', desc: true },
+    sort: { key: 'gem_score', desc: true },
   },
   {
     key: 'enablers',

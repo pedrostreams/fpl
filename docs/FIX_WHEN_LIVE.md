@@ -84,6 +84,40 @@ will have happened in between.
 This is when the frozen half of the app comes alive. **Watch it live rather than the next
 morning** — this hour is unrepeatable.
 
+### 2.0 W1, W4 and W7 — everything added in migrations 0034–0037
+
+All of it is unexercised against real data, because none of it *can* be before this instant.
+Ordered by when each becomes checkable, and the recommendation log has to be first because its
+window closes.
+
+- [ ] **Run `python -m sync.cli recommendations` between 11:30 and 17:40 UTC.** The window is
+      six hours before the deadline and ten minutes after; outside it the job writes nothing on
+      purpose. This is the only chance to log GW1, and the log cannot be backfilled — the source
+      views will describe GW2 by tomorrow. Confirm `in_window: true` and 44-ish rows.
+- [ ] Then `select * from recommendation_check;` → `ranks_unique`, `ranks_contiguous`,
+      `stamped_in_time`, `players_named` all true rather than null
+- [ ] **Immediately after 17:30:** `python -m sync.cli manager`. `picks` should stop 404ing and
+      `detail.picks.rows` should read 15. `unresolved_elements` **must be empty** — a non-empty
+      list means an element id in my own squad is not in `player_seasons`, and the screen would
+      show a fourteen-man team that merely looks odd
+- [ ] `select * from my_squad_check;` → `fifteen_players`, `eleven_starters`,
+      `exactly_one_captain`, `exactly_one_vice`, `captain_starts`, `all_resolved` all true
+- [ ] `/me` renders the XI in formation order and the bench **in bench order** — 12, 13, 14, 15
+      is the order they come on and the page must not re-sort it
+- [ ] **`python -m sync.cli league`.** Every member's picks are fetched; `not_published` should
+      be empty. Watch the request count: it is one per member and the friend group is growing
+- [ ] `select * from league_check;` → `owners_within_league`, `owned_pct_sane`,
+      `eo_non_negative`, `subsets_hold` all true
+- [ ] `/league` — effective ownership appears, and **EO above 100% is not clamped**. If every
+      rival captains the same player that is 200%, and it is the correct number
+- [ ] `league_entries.source` flips from `new_entries` to `standings` after GW1 is scored, not
+      at the deadline. Both must remain unioned — a member who never scores stays visible
+- [ ] **Set-piece changes.** `change_feed` will emit its first `set_piece` rows once a taker
+      order moves. Until then zero is correct: the baseline capture ran 2026-07-30 and both sides
+      must be observed before a change can be claimed
+- [ ] **The market branch of the feed.** `market_events` stays 0 until Norsk Tipping re-prices a
+      PL fixture, which needs the deep-market probe on 19–20 August to have gone the right way
+
 - [ ] `transfers_in_event` / `transfers_out_event` become non-zero →
       `select count(*) from player_movement where net_transfers_event <> 0`
 - [ ] `/prices` — the **"Prices are frozen"** banner disappears on its own

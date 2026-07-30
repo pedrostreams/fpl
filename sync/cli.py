@@ -36,7 +36,7 @@ from .fpl import FplClient
 # job can only be broken by its own imports.
 JOBS = (
     "dimensions", "snapshot", "history", "understat", "core_insights",
-    "clubelo", "odds", "market_odds", "manager", "verify",
+    "clubelo", "odds", "market_odds", "manager", "league", "recommendations", "verify",
 )
 
 

@@ -28,15 +28,25 @@ node --no-warnings=MODULE_TYPELESS_PACKAGE_JSON \
 python scripts/probe/calibrate_elo_fixtures.py   # refit the fixture-difficulty constants
 python scripts/probe/prove_style_claims.py       # re-derive every style reliability, needs DB
 python scripts/probe/prove_gameweek_shape.py      # simulate a blank + double in a rolled-back txn
+python scripts/probe/prove_recommendation_log.py  # simulate the deadline write, needs DB
 python scripts/migrate.py                        # apply all migrations (idempotent)
 
 python -m sync.cli all --dry-run                 # FPL core: dimensions, history, snapshot
 python -m sync.cli snapshot                      # the hourly job
 python -m sync.cli enrich                        # Tier 2: understat, core_insights, clubelo, odds, market_odds
 python -m sync.cli market_odds --dry-run         # Norsk Tipping; runs 2-hourly on its own clock
+python -m sync.cli manager                       # my entry: record, picks, transfers, chips
+python -m sync.cli league                        # mini-league 422500 + every rival's picks
+python -m sync.cli recommendations               # stamp the log; no-ops outside the deadline window
 python -m sync.cli understat --rematch           # re-resolve identities from scratch
 python -m sync.cli verify                        # post-sync sanity + storage growth
 ```
+
+**`db.upsert` and `db.insert_ignore` call `conn.commit()` themselves.** So "simulate it in a
+transaction and roll back", the technique this file recommends for exercising an unreachable code
+path, **does not work through those helpers** — the first draft of `prove_recommendation_log.py`
+rolled back at the end and had already written 44 rows to the live database. Simulate against a
+sentinel key and delete it in a `finally`, which is what that probe now does.
 
 There is no test runner. `--dry-run`, the probe scripts, and `verify` are the verification
 path. Five of the six `prove_*` scripts run without a database or network, so they gate CI. One
@@ -269,6 +279,28 @@ rules in it are load-bearing. **A run of blanks is deliberately not a reason** �
 noisier than the underlying, and selling on a blank run is the most common mistake in the game.
 And **`rotation_risk` fires only on a measured decline**, not on competition existing: accepting
 "a real contest for the slot" flagged 38 players including one on 48.7% ownership.
+
+**One page owns one question, and everyone else links.** The nav rule, added with 0033–0037.
+`CaptainPanel` used to render on both `/` and `/gw`; the watchlist and the target list did too.
+Two homes for the same week is what made six routes feel scattered, and it is a thing a feature
+commit will re-introduce by accident unless the rule is stated. The dashboard is the *state of the
+data*, `/gw` is the *decision*, `/me` is *my fifteen*, `/league` is *the people I am playing*,
+`/changed` is *what moved*, `/status` is *is the data alive*. `/gems` was retired into
+`/players?view=differentials` — it was the same rows with a different sort, and 0033 moved
+`gem_score` into the catalogue so the preset could carry it. `/prices` keeps its route but leaves
+the nav until prices unfreeze.
+
+**Everything in 0034–0037 is empty until 2026-08-21 17:30 UTC, and that is the expected state.**
+`picks` 404s for everybody until the GW1 deadline — there is no login that changes this, see
+`docs/LATER.md` item 10. `my_squad_check`, `league_check` and `recommendation_check` therefore
+report all-NULL with row counts beside them, which is the convention for "asserts nothing yet"
+rather than a failure. Two consequences worth carrying:
+
+- **`manager_picks` holds rivals' picks too**, written by `sync/jobs/league.py`. `my_squad` joins
+  `managers` so that sharing the table cannot turn the squad screen into everyone's squads.
+- **The recommendation log is stamped and never recomputed.** `insert_ignore`, a six-hour window
+  before the deadline, and `basis` frozen at write time. A log that re-derives its own history
+  always looks right, which is the one way this feature could be worse than not existing.
 
 **`/players` is the one table, and "view" is the user's word for a saved column set — not a
 Postgres view.** `/scout` and `/gems` were the same 558 rows with different columns and

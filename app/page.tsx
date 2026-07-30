@@ -69,6 +69,10 @@ export default async function Dashboard() {
   const stale = health.filter((h) => h.ageSeconds === null || h.ageSeconds > 60 * 60 * 36)
   const lastSeason = manager?.seasons[0]
   const priceFrozen = !watchlist.some((w) => (w.netTransfersEvent ?? 0) !== 0)
+  // Highest ceiling, for the one-line summary that replaced the duplicated captain panel.
+  const topCeiling = [...captains].sort(
+    (a, b) => (b.ceilingScore ?? 0) - (a.ceilingScore ?? 0),
+  )[0]
 
   return (
     <div className="flex flex-col gap-5">
@@ -176,15 +180,24 @@ export default async function Dashboard() {
           )}
         </Panel>
 
-        {/* ---- captain: two axes, see components/captain-panel.tsx ---- */}
-        <Panel title={gw === null ? 'Captain' : `Captain · GW${gw}`}>
-          {captains.length === 0 ? (
-            <p className="text-[13px]" style={{ color: 'var(--muted)' }}>
-              No candidate clears the 450-minute reliability floor yet.
-            </p>
-          ) : (
-            <CaptainPanel picks={captains} watchedCodes={watchedCodes} />
-          )}
+        {/* ---- captain: LINKED, not rendered ----
+             This panel used to render a second `CaptainPanel`, identical to the one on /gw.
+             Two homes for the same question is what made the app feel scattered, so the rule is
+             now: one page owns one question, and everyone else links. /gw owns the armband
+             because the armband is a decision and this page is the state of the data. */}
+        <Panel
+          title={gw === null ? 'Captain' : `Captain · GW${gw}`}
+          href="/gw"
+          hrefLabel="Gameweek brief"
+          lead={
+            captains.length === 0
+              ? 'No candidate clears the 450-minute reliability floor yet.'
+              : `${captains[0].webName} leads on floor, ${topCeiling?.webName ?? '—'} on ceiling. Which you want depends on whether you are protecting a lead or chasing one, and the brief lays out both axes with all seven rank components.`
+          }
+        >
+          <p className="text-[12px]" style={{ color: 'var(--faint)' }}>
+            Answered in order, with the rest of the week, on the gameweek brief.
+          </p>
         </Panel>
 
         {/* ---- teams to target ---- */}

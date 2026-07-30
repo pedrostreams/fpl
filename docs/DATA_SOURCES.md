@@ -87,8 +87,39 @@ Send a normal browser `User-Agent`. This is the spine of the product.
 | `fixtures/` | 380 fixtures: `event`, `kickoff_time`, `team_h/a`, scores, `team_h_difficulty`/`team_a_difficulty` (FDR 1–5), `stats` (per-player goals/assists/bonus/bps after FT), `pulse_id` | Hourly |
 | `element-summary/{id}/` | `history` (per-GW rows, this season), `history_past` (per-season aggregates incl. `start_cost`/`end_cost`), `fixtures` (next 38 with `difficulty`, `is_home`) | Per player, after each GW |
 | `event/{n}/live/` | Per-player `stats` + `explain` (point-by-point breakdown incl. BPS) | Every 2 min during matches |
-| `leagues-classic/{id}/standings/` | Mini-league table | After each GW |
+| `leagues-classic/{id}/standings/` | Mini-league: `league` meta, `standings`, **`new_entries`** | Daily; after each GW |
+| `entry/{id}/` | Team name, manager, favourite club, `current_event`, bank, squad value | Daily |
+| `entry/{id}/history/` | `past` seasons, `current` per-GW record, `chips` played | Daily |
+| `entry/{id}/transfers/` | Every transfer ever made, newest first | Daily |
 | `entry/{id}/event/{n}/picks/` | A manager's actual XI, captain, chip | After each deadline |
+
+#### 2.2 The manager and league endpoints — probed 2026-07-30
+
+Added for W1/W4 of [`feat/weekly-decisions.md`](feat/weekly-decisions.md). **No authentication is
+involved in any of them.** Probed against entry 1617827 and league 422500:
+
+| Endpoint | Preseason state | Note |
+|---|---|---|
+| `entry/{id}/` | 200 | `last_deadline_bank`/`value` are null — no deadline has passed |
+| `entry/{id}/history/` | 200, `current: []`, `chips: []` | `past` has 10 seasons |
+| `entry/{id}/transfers/` | **200 with `[]`** | Not a 404, so it needs no gate |
+| `entry/{id}/event/1/picks/` | **404** | The squad does not exist until 2026-08-21 17:30 UTC |
+| `leagues-classic/422500/standings/` | 200 | See the trap below |
+
+**The trap, and it would ship as "the league is empty".** Before the season starts, members are
+published under **`new_entries`**, not under `standings` — measured on league 422500 ("Hakuna
+Mateta", `league_type = 'x'`, created 2026-07-30 by Peder): `standings.results` was `[]` while
+`new_entries.results` held every member. A sync reading only `standings` finds nobody and the
+page built on it reports an empty league that is not empty. `sync/jobs/league.py` reads both and
+unions on `entry`, with `standings` winning once it fills.
+
+**Both lists paginate independently.** `standings.has_next` is driven by `page_standings` and
+`new_entries.has_next` by `page_new_entries`, in the same payload. Walking only the first will
+miss members as the friend group grows — it went from 2 to 3 within an hour of first being read.
+
+`entry/{id}/transfers/` is worth naming separately: it is what makes the recommendation log
+(migration 0037) able to score *Peder's* decisions and not only the app's, without asking him to
+record anything by hand.
 
 ### Player fields worth knowing about (all 105 verified present)
 

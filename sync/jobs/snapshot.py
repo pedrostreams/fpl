@@ -31,6 +31,19 @@ WATCHED = (
     "price_change_percent",
     "status",
     "chance_of_playing_next_round",
+    # Added 0036, for the change feed. `status` says a player is doubtful; `news` says why, and
+    # the why is the half a manager acts on. Measured before adding, per SYNC_PLAN §8: over the
+    # first 1 478 rows and 84.3 hours, news changed 9 times and **none of those was news-only** —
+    # every one arrived with a status change, so the row already existed. The honest in-season
+    # upper bound is every news change, ~100 rows a season.
+    "news",
+    # Also 0036. A new penalty taker is one of the largest single-week signals in the game and we
+    # could not see it happen: these live on `player_seasons`, which is upserted, so the previous
+    # order was overwritten. They change a handful of times a season per club, which is the
+    # cheapest possible thing to watch.
+    "penalties_order",
+    "corners_order",
+    "direct_freekicks_order",
     "form",
     "ep_next",
 )
@@ -59,6 +72,12 @@ def _row(element: dict, season: str, event: int | None, captured_at: datetime) -
         "status": as_text(element.get("status")),
         "chance_of_playing_next_round": as_int(element.get("chance_of_playing_next_round")),
         "news": as_text(element.get("news")),
+        # Set-piece duty. Note the payload's name for corners: FPL calls it
+        # `corners_and_indirect_freekicks_order`, and `dimensions` maps it to `corners_order` on
+        # `player_seasons`. The same mapping is used here so the two tables agree.
+        "penalties_order": as_int(element.get("penalties_order")),
+        "corners_order": as_int(element.get("corners_and_indirect_freekicks_order")),
+        "direct_freekicks_order": as_int(element.get("direct_freekicks_order")),
         "total_points": as_int(element.get("total_points")),
         "event_points": as_int(element.get("event_points")),
     }

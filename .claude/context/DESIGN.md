@@ -300,6 +300,41 @@ main   max-w-[1800px] px-4 py-6
   banner goes when `season_started` flips. A banner that is always visible is documentation
   in the wrong place.
 
+### One page owns one question
+
+Added 2026-07-30 with the nav rework. **A panel that answers another page's question links there;
+it does not render a second copy.** `CaptainPanel` lived on both `/` and `/gw`, as did the
+watchlist and the target list, and two homes for the same week is what made six routes feel like
+a mess — more than the number of routes ever did.
+
+| Route | Its question |
+|---|---|
+| `/` | what is the state of the data |
+| `/gw` | what do I do this week |
+| `/me` | what do I do with my fifteen |
+| `/league` | who am I actually playing, and what do they own |
+| `/changed` | what moved since I last looked |
+| `/players`, `/teams` | who is good, who plays how |
+| `/status` | is the data alive |
+
+Two corollaries worth stating because a feature commit will otherwise undo them:
+
+- **A duplicated panel is a design bug, not a convenience.** When two screens want the same
+  answer, one owns it and the other gets a one-sentence summary with a link. The summary may
+  restate the *conclusion*; it may not restate the *component*.
+- **`/status` is not in the nav.** Whether the data is alive is a precondition for trusting a
+  decision rather than a decision, so it gets a coloured dot in the header and nothing more. The
+  same test applies to anything else wanting a nav slot: if it does not answer a question a
+  manager has on a Friday, it is a link.
+
+### Three panels that hide rather than mislead
+
+`rotation_pairs` is built, checked, and deliberately on no screen: its own measurement says the
+best pair is worth 0.14 points a week while the calendar is regular. The rule that came out of
+it — **a panel that would mislead in the common case should hide in the common case** — is the
+inverse of the three-kinds-of-absent rule in §1.2 and applies at panel scale rather than cell
+scale. Surface it when `gameweek_shape` reports a blank or a double, and not before.
+
 ### Tables
 
 `border-separate border-spacing-0` with `sticky top-0` headers on `--surface-2`; first column

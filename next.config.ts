@@ -12,6 +12,18 @@ const nextConfig: NextConfig = {
   // first to run out. Capping the workers bounds total connections; the build is a few seconds
   // slower and it no longer depends on how many cores the machine happens to have.
   experimental: { cpus: 2 },
+  // `/gems` was retired in favour of `/players?view=differentials` once migration 0033 made
+  // `gem_score` a column — the page and the preset were one table with different columns and a
+  // different row filter. Permanent, because the URL is dead rather than moved temporarily, and
+  // a redirect rather than a deletion because the friend group has the old link.
+  //
+  // `redirects()` and not a `page.tsx` that calls `redirect()`: a route file would keep `/gems`
+  // in the `typedRoutes` union, so a stale `<Link href="/gems">` would still compile. Removing
+  // the route is what turns every one of those into a build error, which is how the four inbound
+  // links were found.
+  async redirects() {
+    return [{ source: '/gems', destination: '/players?view=differentials', permanent: true }]
+  },
 }
 
 export default nextConfig

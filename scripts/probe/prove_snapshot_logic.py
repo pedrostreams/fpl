@@ -41,6 +41,12 @@ BUMPS = {
     "price_change_percent": lambda v: (v or Decimal(0)) + 1,
     "status": lambda v: "i" if v != "i" else "a",
     "chance_of_playing_next_round": lambda v: 25 if v != 25 else 50,
+    # Added with WATCHED in 0036. The news mutation has to differ from the real value whatever it
+    # is, including the empty string that most players carry.
+    "news": lambda v: "Knock - 75% chance of playing" if v != "Knock - 75% chance of playing" else "Fit",
+    "penalties_order": lambda v: 1 if v != 1 else 2,
+    "corners_order": lambda v: 1 if v != 1 else 2,
+    "direct_freekicks_order": lambda v: 1 if v != 1 else 2,
     "form": lambda v: (v or Decimal(0)) + 1,
     "ep_next": lambda v: (v or Decimal(0)) + 1,
 }

@@ -66,8 +66,19 @@ class FplClient:
     def event_live(self, event: int) -> dict:
         return self._get(f"event/{event}/live/", f"live-gw{event}")
 
-    def league_standings(self, league_id: int, page: int = 1) -> dict:
-        return self._get(f"leagues-classic/{league_id}/standings/?page_standings={page}")
+    def league_standings(self, league_id: int, page: int = 1, new_entries_page: int = 1) -> dict:
+        """One page of a classic league.
+
+        **Two independent paginations in one payload.** `standings` and `new_entries` each carry
+        their own `has_next`, and each is driven by its own query parameter — so a caller walking
+        only `page_standings` will never reach the second page of members. That matters before the
+        season starts, when `standings` is empty and `new_entries` is the only list there is
+        (probed 2026-07-30 on league 422500).
+        """
+        return self._get(
+            f"leagues-classic/{league_id}/standings/"
+            f"?page_standings={page}&page_new_entries={new_entries_page}"
+        )
 
     def entry_picks(self, entry_id: int, event: int) -> dict:
         return self._get(f"entry/{entry_id}/event/{event}/picks/")
@@ -77,6 +88,15 @@ class FplClient:
 
     def entry_history(self, entry_id: int) -> dict:
         return self._get(f"entry/{entry_id}/history/", f"entry-{entry_id}-history")
+
+    def entry_transfers(self, entry_id: int) -> list[dict]:
+        """Every transfer the manager has ever made, newest first.
+
+        Unlike `picks`, this needs no gate: probed 2026-07-30 it returns **200 with an empty
+        list** in preseason rather than 404. So "no transfers yet" and "transfers exist" have the
+        same shape and the caller does not have to tell them apart.
+        """
+        return self._get(f"entry/{entry_id}/transfers/", f"entry-{entry_id}-transfers")
 
     def entry_picks_optional(self, entry_id: int, event: int) -> dict | None:
         """The squad, or None if FPL has not published it.

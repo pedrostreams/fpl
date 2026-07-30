@@ -598,11 +598,17 @@ def run(
         # legitimately empty until the season starts (`trend_check` has one by design, with its
         # row count published beside it), and failing on those would make `verify` red for a
         # month for no reason.
+        # The four added in 0034-0037 are all-NULL until 2026-08-21 and that is correct: no squad,
+        # no standings, no logged recommendation and no scored gameweek exists before the first
+        # deadline. Each publishes a row count beside its booleans so "asserts nothing" is
+        # visible rather than reading as a pass.
         for view in ("market_odds_check", "fixture_percentage_check",
                      "position_price_value_check", "form_check",
                      "rotation_pairs_check", "rotation_risk_check",
                      "gameweek_shape_check", "sell_check",
-                     "style_check", "trend_check"):
+                     "style_check", "trend_check", "gem_score_check",
+                     "my_squad_check", "league_check", "change_check",
+                     "recommendation_check"):
             rows = db.fetch(conn, f"select * from {view}")
             if not rows:
                 problems.append(f"{view}: returned no rows at all")

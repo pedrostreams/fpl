@@ -1729,17 +1729,271 @@ export async function getFormPlayers(limit = 8): Promise<FormPlayer[]> {
 export type SyncHealth = {
   job: string
   lastOk: string | null
+  lastAttempt: string | null
   ageSeconds: number | null
+  errors24h: number | null
 }
 
 export async function getSyncHealth(): Promise<SyncHealth[]> {
   const rows = await query<Record<string, unknown>>(`
-    select job, last_ok, extract(epoch from age)::int as age_seconds
+    select job, last_ok, last_attempt, extract(epoch from age)::int as age_seconds, errors_24h
     from sync_freshness order by job
   `)
   return rows.map((r) => ({
     job: String(r.job),
     lastOk: r.last_ok ? new Date(r.last_ok as string).toISOString() : null,
+    lastAttempt: r.last_attempt ? new Date(r.last_attempt as string).toISOString() : null,
     ageSeconds: num(r.age_seconds),
+    errors24h: num(r.errors_24h),
+  }))
+}
+
+export type DispatchHealth = {
+  workflow: string
+  dispatches24h: number | null
+  ok24h: number | null
+  failed24h: number | null
+  pending: number | null
+  minutesSinceLast: number | null
+  lastError: string | null
+}
+
+/**
+ * The thing to read when captures go quiet.
+ *
+ * `sync_runs` alone cannot tell "the token is dead" from "the job is unscheduled" from "GitHub is
+ * fine and nothing moved" — all three look like an absence of rows. This separates them, which is
+ * why migration 0019 built it when the hourly clock moved into pg_cron.
+ */
+export async function getDispatchHealth(): Promise<DispatchHealth[]> {
+  const rows = await query<Record<string, unknown>>(`
+    select workflow, dispatches_24h, ok_24h, failed_24h, pending,
+           minutes_since_last, last_error
+    from workflow_dispatch_health order by workflow
+  `)
+  return rows.map((r) => ({
+    workflow: String(r.workflow),
+    dispatches24h: num(r.dispatches_24h),
+    ok24h: num(r.ok_24h),
+    failed24h: num(r.failed_24h),
+    pending: num(r.pending),
+    minutesSinceLast: num(r.minutes_since_last),
+    lastError: r.last_error ? String(r.last_error) : null,
+  }))
+}
+
+// ---------------------------------------------------------------------------------------
+// My team (W1) and the mini-league (W4)
+// ---------------------------------------------------------------------------------------
+// Both are empty until the GW1 deadline and both say so on screen rather than rendering a
+// zero. FPL publishes no squad before 2026-08-21 17:30 UTC — see migration 0034.
+
+export type SquadPlayer = {
+  playerCode: number
+  webName: string
+  position: string
+  teamCode: number
+  teamShort: string
+  pickPosition: number
+  multiplier: number
+  isCaptain: boolean
+  isVice: boolean
+  inXi: boolean
+  price: number | null
+  selectedByPercent: number | null
+  totalPoints: number | null
+  xgiPer90: number | null
+  defconPer90: number | null
+  minutesShare: number | null
+  status: string | null
+  news: string | null
+  chanceOfPlaying: number | null
+  fixtureCount: number
+  opponents: string | null
+  pCleanSheet: number | null
+  pTeamScores: number | null
+  riskWord: string | null
+  riskReasons: string[]
+}
+
+export type Squad = {
+  event: number | null
+  players: SquadPlayer[]
+}
+
+export async function getMySquad(): Promise<Squad> {
+  const rows = await query<Record<string, unknown>>(`
+    select * from my_squad order by pick_position
+  `)
+  return {
+    event: rows.length ? num(rows[0].event) : null,
+    players: rows.map((r) => ({
+      playerCode: Number(r.player_code),
+      webName: String(r.web_name),
+      position: String(r.position),
+      teamCode: Number(r.team_code),
+      teamShort: String(r.team_short ?? ''),
+      pickPosition: Number(r.pick_position),
+      multiplier: Number(r.multiplier),
+      isCaptain: Boolean(r.is_captain),
+      isVice: Boolean(r.is_vice),
+      inXi: Boolean(r.in_xi),
+      price: num(r.price),
+      selectedByPercent: num(r.selected_by_percent),
+      totalPoints: num(r.total_points),
+      xgiPer90: num(r.xgi_per_90),
+      defconPer90: num(r.defcon_per_90),
+      minutesShare: num(r.minutes_share),
+      status: (r.status as string) ?? null,
+      news: (r.news as string) ?? null,
+      chanceOfPlaying: num(r.chance_of_playing),
+      fixtureCount: Number(r.fixture_count ?? 0),
+      opponents: (r.opponents as string) ?? null,
+      pCleanSheet: num(r.p_clean_sheet),
+      pTeamScores: num(r.p_team_scores),
+      riskWord: (r.risk_word as string) ?? null,
+      riskReasons: (r.risk_reasons as string[]) ?? [],
+    })),
+  }
+}
+
+export type LeagueMember = {
+  entryId: number
+  entryName: string | null
+  playerName: string | null
+  rank: number | null
+  lastRank: number | null
+  total: number | null
+  eventTotal: number | null
+  source: string
+}
+
+export type League = {
+  leagueId: number
+  name: string | null
+  adminEntry: number | null
+  startEvent: number | null
+  members: LeagueMember[]
+} | null
+
+export async function getLeague(): Promise<League> {
+  const rows = await query<Record<string, unknown>>(
+    `select league_id, name, admin_entry, start_event from leagues order by league_id limit 1`,
+  )
+  if (!rows.length) return null
+  const l = rows[0]
+  const members = await query<Record<string, unknown>>(
+    // Standings order once it exists; before that, join order, which is the only order there is.
+    `select entry_id, entry_name, player_name, rank, last_rank, total, event_total, source
+     from league_entries where league_id = $1
+     order by rank nulls last, joined_at nulls last, entry_id`,
+    [Number(l.league_id)],
+  )
+  return {
+    leagueId: Number(l.league_id),
+    name: (l.name as string) ?? null,
+    adminEntry: num(l.admin_entry),
+    startEvent: num(l.start_event),
+    members: members.map((m) => ({
+      entryId: Number(m.entry_id),
+      entryName: (m.entry_name as string) ?? null,
+      playerName: (m.player_name as string) ?? null,
+      rank: num(m.rank),
+      lastRank: num(m.last_rank),
+      total: num(m.total),
+      eventTotal: num(m.event_total),
+      source: String(m.source),
+    })),
+  }
+}
+
+export type OwnershipRow = {
+  playerCode: number
+  webName: string
+  position: string
+  teamCode: number
+  teamShort: string
+  price: number | null
+  owners: number
+  rivals: number
+  starters: number
+  captains: number
+  ownedPct: number | null
+  effectiveOwnership: number | null
+  selectedByPercent: number | null
+  eoMinusGlobal: number | null
+  opponents: string | null
+}
+
+export async function getLeagueOwnership(limit = 40): Promise<OwnershipRow[]> {
+  const rows = await query<Record<string, unknown>>(
+    `select * from league_ownership order by effective_ownership desc, owners desc limit $1`,
+    [limit],
+  )
+  return rows.map((r) => ({
+    playerCode: Number(r.player_code),
+    webName: String(r.web_name),
+    position: String(r.position),
+    teamCode: Number(r.team_code),
+    teamShort: String(r.team_short ?? ''),
+    price: num(r.price),
+    owners: Number(r.owners),
+    rivals: Number(r.rivals),
+    starters: Number(r.starters),
+    captains: Number(r.captains),
+    ownedPct: num(r.owned_pct),
+    effectiveOwnership: num(r.effective_ownership),
+    selectedByPercent: num(r.selected_by_percent),
+    eoMinusGlobal: num(r.eo_minus_global),
+    opponents: (r.opponents as string) ?? null,
+  }))
+}
+
+// ---------------------------------------------------------------------------------------
+// What changed (W2)
+// ---------------------------------------------------------------------------------------
+
+export type ChangeEvent = {
+  kind: 'price' | 'availability' | 'set_piece' | 'market'
+  at: string
+  playerCode: number | null
+  teamCode: number | null
+  webName: string | null
+  position: string | null
+  teamShort: string | null
+  delta: number | null
+  before: string | null
+  after: string | null
+  note: string | null
+  isWatched: boolean
+  isMine: boolean
+}
+
+/**
+ * Newest first, capped. The cap is a render budget, not an editorial judgement — the view ranks
+ * nothing and filters nothing, because a feed that decides what matters is a feed that hides the
+ * thing you were looking for.
+ */
+export async function getChangeFeed(limit = 120): Promise<ChangeEvent[]> {
+  const rows = await query<Record<string, unknown>>(
+    `select kind, at, player_code, team_code, web_name, position, team_short,
+            delta, before, after, note, is_watched, is_mine
+     from change_feed_detail order by at desc limit $1`,
+    [limit],
+  )
+  return rows.map((r) => ({
+    kind: r.kind as ChangeEvent['kind'],
+    at: new Date(r.at as string).toISOString(),
+    playerCode: num(r.player_code),
+    teamCode: num(r.team_code),
+    webName: (r.web_name as string) ?? null,
+    position: (r.position as string) ?? null,
+    teamShort: (r.team_short as string) ?? null,
+    delta: num(r.delta),
+    before: (r.before as string) ?? null,
+    after: (r.after as string) ?? null,
+    note: (r.note as string) ?? null,
+    isWatched: Boolean(r.is_watched),
+    isMine: Boolean(r.is_mine),
   }))
 }
