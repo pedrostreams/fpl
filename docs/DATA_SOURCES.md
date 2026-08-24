@@ -524,7 +524,7 @@ is a football-analysis tool for a friend group and stays one.
 
 Three things about this source turned out to be materially different from first impressions,
 all found on 2026-07-26 while building the derived views. Two of them would have silently
-corrupted every per-90 in the app.
+corrupted every per-90 in the app. A fourth arrived with the new season and is below them.
 
 **1. The `By Gameweek/GW{n}/` folders are not Premier League only.** They include Champions
 League, Europa League and cup fixtures played in the same window. Of 519 distinct 2025/26
@@ -568,6 +568,32 @@ averaging them dragged every figure to `0.00`, which is how the gap was noticed 
 `player_congestion` now applies `nullif(..., 0)` and publishes
 `matches_with_physical` so the thin sample is visible. Worth re-checking in-season; if
 coverage improves this becomes genuinely useful.
+
+**4. The 2026-27 payload changed shape, and it broke four screens.** Found 2026-08-24, three
+days after the GW1 deadline wrote the first 2026-27 rows. Three changes, in order of how much
+they cost:
+
+- **Every counter is now a float string.** `"clearances": "1.0"` where 2025-26 wrote `"1"`.
+  That is not a widening — `(stats->>'clearances')::int` raises
+  `invalid input syntax for type integer: "1.0"`, and because `player_match_metric` (0027) is
+  the base of `player_form_metric` → `rotation_risk` → `my_squad` and `sell_candidates`, one
+  bad cast took out `/me` and half of `/gw` with an error that named none of them. Migration
+  0027 now casts everything out of `stats` to `numeric`. **Never `::int` on a `stats` key.**
+- **Keys are sparse.** 2025-26 wrote all 53 keys on all 12 242 rows. 2026-27 writes a key only
+  where it has a value: of 313 rows, `clearances` appears on 245, `total_shots` on 111,
+  `accurate_crosses` on 104. A missing key is `null`, not zero, and `where value is not null`
+  in `player_match_metric` already drops those rows rather than counting them as zero.
+- **Four keys are gone: `tackles`, `big_chances_missed`, `defensive_contributions`,
+  and the physical set** (`running_distance`, `sprinting_distance`, `number_of_sprints`,
+  plus `corners`, `offsides`, `successful_dribbles`, `tackles_won_percent`). Only
+  `tackles_won` remains of the tackle pair. Consequence: `cbit` and `defcon_hit` sum to
+  `null` for every 2026-27 row and produce **no rows at all** in `player_match_metric`, and
+  `big_chances` likewise. Nothing errors and nothing is wrong — the metric is simply absent,
+  which is the failure mode this file exists to make visible. It costs nothing before GW6
+  because the window needs six appearances, so there is runway to decide whether
+  `tackles_won` is an acceptable substitute for `tackles` in CBIT (it is a subset, so it
+  understates) or whether the DEFCON hit rate should come from FPL's own per-match figure
+  instead — which §2 above already argues is the only trustworthy source for it.
 
 ### olbauday/FPL-Core-Insights
 GitHub CSV dataset, **auto-updated twice daily — verified commit `2026-07-26 08:18 UTC`**,

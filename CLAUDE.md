@@ -290,11 +290,24 @@ data*, `/gw` is the *decision*, `/me` is *my fifteen*, `/league` is *the people 
 `gem_score` into the catalogue so the preset could carry it. `/prices` keeps its route but leaves
 the nav until prices unfreeze.
 
-**Everything in 0034–0037 is empty until 2026-08-21 17:30 UTC, and that is the expected state.**
-`picks` 404s for everybody until the GW1 deadline — there is no login that changes this, see
-`docs/LATER.md` item 10. `my_squad_check`, `league_check` and `recommendation_check` therefore
-report all-NULL with row counts beside them, which is the convention for "asserts nothing yet"
-rather than a failure. Two consequences worth carrying:
+**0034–0037 were empty until 2026-08-21 17:30 UTC, and "empty" was the expected state — but
+only until then.** `picks` 404s for everybody before the GW1 deadline; there is no login that
+changes this, see `docs/LATER.md` item 10. `my_squad_check`, `league_check` and
+`recommendation_check` therefore reported all-NULL with row counts beside them, which is the
+convention for "asserts nothing yet" rather than a failure. **`my_squad_check` and `league_check`
+now assert for real** and were both clean on 2026-08-24; `recommendation_check` is still all-NULL
+because the log is only stamped inside a six-hour pre-deadline window and no job holds that clock.
+
+**An expected-empty state is a terrible place to hide a bug, and this one hid for three days.**
+`manager` and `league` were registered in `cli.py:JOBS` and reachable by hand, and were in **no
+schedule at all** — `sync.cli all` is dimensions + history + snapshot, and neither
+`.github/workflows/` nor `cron.job` named them. Both last ran 2026-07-30. So the deadline passed,
+`manager_picks` stayed empty, and `/me` went on rendering its "not published yet" panel — which is
+byte-identical to the correct preseason state, so the screen looked right while being three weeks
+stale. **Registering a job in `JOBS` does not schedule it**; they are now steps in `sync-daily.yml`
+(there, not a workflow of their own, because `verify` already projects 1654 of 2000 free-tier
+Actions minutes a month). And `sync_freshness` is the thing that shows this — every other job read
+an hour old while these two read twenty-five days. Two consequences worth carrying:
 
 - **`manager_picks` holds rivals' picks too**, written by `sync/jobs/league.py`. `my_squad` joins
   `managers` so that sharing the table cannot turn the squad screen into everyone's squads.

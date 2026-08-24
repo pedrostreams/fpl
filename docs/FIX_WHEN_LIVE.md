@@ -96,14 +96,31 @@ window closes.
       views will describe GW2 by tomorrow. Confirm `in_window: true` and 44-ish rows.
 - [ ] Then `select * from recommendation_check;` → `ranks_unique`, `ranks_contiguous`,
       `stamped_in_time`, `players_named` all true rather than null
-- [ ] **Immediately after 17:30:** `python -m sync.cli manager`. `picks` should stop 404ing and
+- [x] **Immediately after 17:30:** `python -m sync.cli manager`. `picks` should stop 404ing and
       `detail.picks.rows` should read 15. `unresolved_elements` **must be empty** — a non-empty
       list means an element id in my own squad is not in `player_seasons`, and the screen would
       show a fourteen-man team that merely looks odd
-- [ ] `select * from my_squad_check;` → `fifteen_players`, `eleven_starters`,
+      *(Done 2026-08-24, **three days late**. Nobody ran it, because this line assumed a human
+      would and no workflow did: `sync.cli all` is dimensions + history + snapshot, and
+      `manager`/`league` were in `JOBS` but in no schedule anywhere — not GitHub Actions, not
+      `cron.job`. Both had last run 2026-07-30, by hand. The failure was invisible because an
+      empty `manager_picks` renders `/me`'s "not published yet" panel, which is byte-identical
+      to the correct preseason state. **`sync_freshness` is what catches this class of bug** —
+      every other job read an hour old and these two twenty-five days. Both are now steps in
+      `sync-daily.yml`, so this item is no longer a manual one. 15 rows, `unresolved_elements`
+      empty.)*
+- [x] `select * from my_squad_check;` → `fifteen_players`, `eleven_starters`,
       `exactly_one_captain`, `exactly_one_vice`, `captain_starts`, `all_resolved` all true
-- [ ] `/me` renders the XI in formation order and the bench **in bench order** — 12, 13, 14, 15
+      *(All six true, 2026-08-24 — but only after migration 0027 was fixed. The first
+      `select * from my_squad` after the picks landed raised
+      `invalid input syntax for type integer: "4.0"`: FPL-Core-Insights writes 2026-27 counters
+      as float strings, `player_match_metric` cast them with `::int`, and `my_squad` inherits
+      that through `rotation_risk`. Nothing had exercised the path because the view had never
+      once been evaluated against a non-empty `manager_picks`. See DATA_SOURCES.md §4 of the
+      Core-Insights caveats.)*
+- [x] `/me` renders the XI in formation order and the bench **in bench order** — 12, 13, 14, 15
       is the order they come on and the page must not re-sort it
+      *(200 and correct, 2026-08-24.)*
 - [ ] **`python -m sync.cli league`.** Every member's picks are fetched; `not_published` should
       be empty. Watch the request count: it is one per member and the friend group is growing
 - [ ] `select * from league_check;` → `owners_within_league`, `owned_pct_sane`,

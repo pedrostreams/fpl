@@ -125,19 +125,26 @@ lateral (values
   ('xa',          xa::numeric),
   ('chances',     (stats->>'chances_created')::numeric),
   ('big_chances', (stats->>'big_chances_missed')::numeric),
-  ('cbit',        ((stats->>'clearances')::int + (stats->>'blocks')::int
-                 + (stats->>'interceptions')::int + (stats->>'tackles')::int)::numeric),
+  -- ::numeric, never ::int, on anything pulled out of `stats`. FPL-Core-Insights changed
+  -- shape with the 2026-27 season: every counter now arrives as a float string ("1.0") where
+  -- 2025-26 wrote "1". `::int` on "1.0" is not a silent widening, it is
+  -- `invalid input syntax for type integer`, and because this view is the base of
+  -- `player_form_metric` → `rotation_risk` → `my_squad` / `sell_candidates`, the error
+  -- surfaced four screens away as a 500 with nothing in it naming this line. Found
+  -- 2026-08-24, three days after the GW1 deadline first wrote 2026-27 rows here.
+  ('cbit',        ((stats->>'clearances')::numeric + (stats->>'blocks')::numeric
+                 + (stats->>'interceptions')::numeric + (stats->>'tackles')::numeric)::numeric),
   -- The FPL threshold, per match, as 0 or 1 — so the mean is the hit *rate*. Defenders count
   -- CBIT alone; midfielders and forwards add recoveries. Null for keepers, who get none.
   ('defcon_hit',  case when defcon_threshold is null then null
                        when element_type = 2 then
-                         (((stats->>'clearances')::int + (stats->>'blocks')::int
-                         + (stats->>'interceptions')::int + (stats->>'tackles')::int)
+                         (((stats->>'clearances')::numeric + (stats->>'blocks')::numeric
+                         + (stats->>'interceptions')::numeric + (stats->>'tackles')::numeric)
                           >= defcon_threshold)::int::numeric
                        else
-                         (((stats->>'clearances')::int + (stats->>'blocks')::int
-                         + (stats->>'interceptions')::int + (stats->>'tackles')::int
-                         + (stats->>'recoveries')::int) >= defcon_threshold)::int::numeric
+                         (((stats->>'clearances')::numeric + (stats->>'blocks')::numeric
+                         + (stats->>'interceptions')::numeric + (stats->>'tackles')::numeric
+                         + (stats->>'recoveries')::numeric) >= defcon_threshold)::int::numeric
                   end),
   ('minutes',     minutes_played::numeric)
 ) as v(metric, value)

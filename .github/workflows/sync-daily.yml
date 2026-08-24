@@ -41,6 +41,31 @@ jobs:
           python -m sync.cli all --no-cache \
             ${{ inputs.dry_run && '--dry-run' || '' }}
 
+      # Steps here rather than a workflow of their own, because both are two API calls and a
+      # handful of upserts — a separate schedule would cost a billed minute each at the 1-minute
+      # minimum, and `verify` already reports that snapshot dispatches alone project 1654 of the
+      # 2000 free-tier minutes a month.
+      #
+      # THESE WERE IN NO WORKFLOW AT ALL UNTIL 2026-08-24, AND NOBODY NOTICED FOR THREE DAYS.
+      # `sync.cli all` is dimensions + history + snapshot; `manager` and `league` are not in it,
+      # and adding a job to `JOBS` does not schedule it. Both had run exactly once, by hand, on
+      # 2026-07-30 — three weeks before the deadline, when `picks` still 404'd for everybody. So
+      # `manager_picks` stayed empty through the GW1 deadline and `/me` went on rendering its
+      # "not published yet" panel, which is indistinguishable from the correct preseason state
+      # and is why this took three days to spot. `sync_freshness` had it the whole time: every
+      # other job an hour old, these two twenty-five days.
+      #
+      # Ordered before Verify deliberately — `my_squad_check` and `league_check` assert on what
+      # they write, and a check that runs before its own ingest asserts nothing.
+      - name: Sync my entry + the mini-league
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python -m sync.cli manager --no-cache \
+            ${{ inputs.dry_run && '--dry-run' || '' }}
+          python -m sync.cli league --no-cache \
+            ${{ inputs.dry_run && '--dry-run' || '' }}
+
       # A green sync only proves the process exited 0. This checks the things that can be
       # silently wrong: season attribution, unresolved references, snapshot
       # insert-on-change behaviour, stale runs, and growth against the 500 MB free tier.
