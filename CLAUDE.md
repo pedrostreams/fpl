@@ -456,6 +456,31 @@ Two traps this table hit, both found by rendering it and reading the result:
   on two minutes and an npxG/90 of 3.29; the top five in the whole pool all fail
   `has_reliable_sample`.
 
+**The reliability floor is a setting, not a constant — never hardcode it again.**
+`analysis_settings.min_minutes_for_rates`, read by `player_stats_season` and `player_scout`
+(migrations 0040/0041). 450 is the settled value; it sits at **120** because after two
+gameweeks the maximum possible is 180, so `captain_picks`, `target_players` and `hidden_gems`
+returned nothing in the weeks they matter most. Raise it with one statement —
+`update analysis_settings set min_minutes_for_rates = 450;` — and every view follows. `verify`
+prints the current value and shouts when it is below 450, because a temporary setting nobody
+can see becomes a permanent one.
+
+Two things that fell out of moving it, both worth knowing before touching a floor again:
+
+- **`is_cold_start` and `has_reliable_sample` are one predicate, not two.** Lowering only the
+  latter left `captain_picks` working and `target_players`/`hidden_gems` still empty, because
+  `player_target_base`, `hidden_gems` and `player_metric_percentile` all open with
+  `where not is_cold_start`. And `gem_score_check` asserts
+  `filter (where is_cold_start or not has_reliable_sample) as ineligible_are_null`, so splitting
+  them does not merely mislabel — it makes a check view false. They move together.
+- **Lowering a floor makes unreachable code reachable, and that is where the bugs are.**
+  `sell_check.upside_never_fires_alone` went false immediately. `no_attacking_upside` had never
+  actually required `defence_declining` despite its own comment saying so — the two branches
+  shared only `clean_sheet_pct < 0.25` — but every per-90 was NULL under 450, so it could not
+  fire. At 120 it flagged 8 players, one of them on nothing but a defender having a low xGI.
+  0042 gives both branches a single `defence_is_declining` boolean, so the rule is structural
+  rather than asserted. Expect more of this shape: a floor is also a mask.
+
 ## Data sources — read before adding a stat
 
 `docs/DATA_SOURCES.md` is the single source of truth, and **any change to a source, stat,

@@ -301,6 +301,18 @@ def run(
             print("\n=== season_context (drives which season every view reads) ===")
             print(_fmt(ctx))
 
+        # The reliability floor is a setting (0040), lowered to 120 for the opening weeks so the
+        # captain, target and gem panels are not empty in the gameweeks they matter most. That is
+        # a deliberate trade against a noisier per-90, and it is meant to go back up — so print
+        # it, loudly when it is below the settled value. A temporary setting nobody can see is a
+        # permanent one. Raise it with:
+        #     update analysis_settings set min_minutes_for_rates = 450;
+        floor = db.fetch(conn, "select min_minutes_for_rates as m from analysis_settings")
+        if floor:
+            m = floor[0]["m"]
+            note = "settled" if m >= 450 else f"LOWERED from 450 — raise it once minutes catch up"
+            print(f"\n=== reliability floor: {m} minutes ({note}) ===")
+
         scout = db.fetch(conn, """
             select count(*) as players,
                    count(*) filter (where is_cold_start) as cold_start,
