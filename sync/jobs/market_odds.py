@@ -120,6 +120,24 @@ def _side_of(market_name: str, home: str, away: str) -> str | None:
     return None
 
 
+# Norsk Tipping derives and combines markets by reusing the plain market's words, and serves
+# the derivations AFTER the plain market. With substring recognisers and an unconditional
+# write, the narrower market therefore wins. Measured 2026-09-01 on Aston Villa v Arsenal
+# (146 markets), six of eight fields were wrong: `p_over_25` and `p_over_35` held **card**
+# counts from `Antall kort over/under 2.5`, `p_btts` and `p_over_15` had been wiped to NULL by
+# `1. omgang: HUB og ...`, and both clean sheets held win-to-nil instead of the clean sheet —
+# understated by exactly P(0-0), 5.8pp on average across 472 of 472 stored rows.
+#
+# A name carrying any of these describes a different event from the plain market, so it is
+# skipped before any recogniser sees it. Not reported unknown: it is recognised, just not
+# something we store.
+DERIVED = (
+    "omgang",       # half-scoped:  `1. omgang - totalt antall mål - over/under 0.5`
+    " og ",         # combined:     `HUB og begge lag scorer`, `X vinner og holder nullen`
+    "antall kort",  # not goals:    `Antall kort over/under 2.5`
+)
+
+
 def parse_markets(
     markets: list[dict[str, Any]], home: str, away: str
 ) -> tuple[dict[str, Any], list[str]]:
@@ -130,15 +148,35 @@ def parse_markets(
     League's deep-market names cannot be verified before 21 August, so anything unmatched has
     to surface in the job's output rather than being silently dropped. Nothing is lost either
     way — every market is stored verbatim in `market_odds.markets`.
+
+    A `COLLISION <field>: <name>` entry in the unrecognised list means two markets claimed the
+    same field — see `_put`. It is a parser bug, not an unfamiliar name.
     """
     out: dict[str, Any] = {}
     unknown: list[str] = []
+
+    def _put(field: str, value: Any, market_name: str) -> None:
+        """Write-once, because the plain market is always served before its derivations.
+
+        The second defence behind `DERIVED`, and the one that does not need updating: if a
+        rename slips a superset name past the skip list, the correct value survives and the
+        collision is reported instead of quietly replacing it. Before this, the last writer
+        won and `p_over_25` spent the opening fortnight holding a booking count.
+        """
+        if field in out:
+            unknown.append(f"COLLISION {field}: {market_name}")
+            return
+        out[field] = value
 
     for m in markets:
         name = m.get("marketName") or ""
         n = _norm(name)
         sels = m.get("selections") or []
         if not sels:
+            continue
+
+        # A derivation of another market rather than the plain full-match event. See `DERIVED`.
+        if any(tok in n for tok in DERIVED):
             continue
 
         # 1X2. The only market open outside the deep window, and the one that expires.
@@ -151,7 +189,7 @@ def parse_markets(
 
         # Both teams to score.
         if "begge lag scorer" in n or "btts" in n:
-            out["p_btts"] = _yes(sels)
+            _put("p_btts", _yes(sels), name)
             continue
 
         # Clean sheet — `holder nullen`. The single most valuable field here: clean sheets
@@ -159,7 +197,7 @@ def parse_markets(
         # suspension already in it where `exp(-lambda)` does not.
         if "holder nullen" in n or "clean sheet" in n:
             if side := _side_of(name, home, away):
-                out[f"p_{side}_clean_sheet"] = _yes(sels)
+                _put(f"p_{side}_clean_sheet", _yes(sels), name)
             else:
                 unknown.append(name)
             continue
@@ -171,19 +209,24 @@ def parse_markets(
         if "totalt" in n and (side := _side_of(name, home, away)):
             line = _line(name) or _line(str(sels[0].get("selectionName") or ""))
             if line == 0.5:
-                out[f"p_{side}_scores"] = _over(sels)
+                _put(f"p_{side}_scores", _over(sels), name)
             elif line == 1.5:
-                out[f"p_{side}_scores_2plus"] = _over(sels)
+                _put(f"p_{side}_scores_2plus", _over(sels), name)
             else:
                 unknown.append(name)
             continue
 
-        # Whole-match goals over/under.
-        if ("totalt" in n or "total" in n or "over" in n) and (line := _line(name)):
+        # Whole-match goals over/under. `mal` — `mål` with the ring stripped by `_norm` — is a
+        # positive requirement, not decoration: `Antall kort over/under 2.5` matches on `over`
+        # with a 2.5 line, and without this gate a booking count lands in `p_over_25` as a goal
+        # probability. `DERIVED` also excludes that particular name; this is what protects the
+        # corner, throw-in and card markets nobody has enumerated yet, which now reach the
+        # unrecognised list instead of a goals column.
+        if "mal" in n and ("totalt" in n or "total" in n or "over" in n) and (line := _line(name)):
             key = {0.5: "p_over_05", 1.5: "p_over_15",
                    2.5: "p_over_25", 3.5: "p_over_35"}.get(line)
             if key:
-                out[key] = _over(sels)
+                _put(key, _over(sels), name)
             else:
                 unknown.append(name)
             continue
@@ -398,6 +441,105 @@ def run(
                 "unknown_teams": teams.report(),
             })
             state["rows"] = written
+            state["detail"] = detail
+
+    return detail
+
+
+def reparse(
+    client: FplClient | None = None,
+    *,
+    dry_run: bool = False,
+    season: str | None = None,
+) -> dict[str, Any]:
+    """Re-derive every stored row's probabilities from its own raw payload.
+
+    **The one place this table is updated rather than appended to**, and it is safe only
+    because `markets` holds Norsk Tipping's response verbatim: this re-runs `parse_markets`
+    over bytes already on disk, so nothing is invented and no request is made. `fetched_at` is
+    never touched — it is the capture instant and part of the primary key.
+
+    Needed because a parser fix does not reach history. The 2026-09-01 fix
+    (see `DERIVED` and `_put`) corrected six of eight columns on every row captured since the
+    deep market set opened, and those rows are what `market_odds_check`, the clean-sheet cross
+    check and every defensive recommendation read.
+
+    Rows whose values do not move are left alone, so this is re-runnable and reports honestly.
+    One consequence worth knowing: append-on-change decided some of these rows were new
+    *because* a card count had moved, so after a reparse the series can hold consecutive
+    identical rows. They are harmless — a duplicate reads as "no change", which is what it
+    was — and deleting them would discard capture instants that did happen.
+    """
+    detail: dict[str, Any] = {"dry_run": dry_run}
+
+    with db.connect() as conn:
+        with db.sync_run(conn, "market_odds_reparse") as state:
+            where, params = "markets is not null", []
+            if season:
+                where += " and season = %s"
+                params.append(season)
+            stored = db.fetch(
+                conn,
+                f"""select source, external_event_id, fetched_at, home_team_raw, away_team_raw,
+                           markets, {', '.join(DRIFT_KEYS)}
+                      from market_odds where {where}
+                     order by fetched_at""",
+                tuple(params),
+            )
+
+            updates: list[dict[str, Any]] = []
+            field_counts: dict[str, int] = {}
+            collisions: list[str] = []
+
+            for row in stored:
+                markets = (row["markets"] or {}).get("markets") or []
+                probs, unknown = parse_markets(
+                    markets, row["home_team_raw"] or "", row["away_team_raw"] or "")
+                collisions.extend(u for u in unknown if u.startswith("COLLISION"))
+
+                fixed = {k: probs.get(k) for k in DRIFT_KEYS}
+                moved = [
+                    k for k in DRIFT_KEYS
+                    if (None if fixed[k] is None else round(float(fixed[k]), 5))
+                    != (None if row[k] is None else round(float(row[k]), 5))
+                ]
+                if not moved:
+                    continue
+                for k in moved:
+                    field_counts[k] = field_counts.get(k, 0) + 1
+                updates.append({
+                    "source": row["source"],
+                    "external_event_id": row["external_event_id"],
+                    "fetched_at": row["fetched_at"],
+                    **fixed,
+                })
+
+            # An explicit UPDATE, not `db.upsert`: upsert inserts first and lets the conflict
+            # clause redirect it, so every NOT NULL column would have to be carried along just
+            # to re-derive a probability. Naming the columns also keeps this incapable of
+            # touching `fetched_at`, `markets` or the fixture resolution.
+            if updates and not dry_run:
+                sets = ", ".join(f"{k} = %({k})s" for k in DRIFT_KEYS)
+                with conn.cursor() as cur:
+                    cur.executemany(
+                        f"""update market_odds set {sets}, updated_at = now()
+                             where source = %(source)s
+                               and external_event_id = %(external_event_id)s
+                               and fetched_at = %(fetched_at)s""",
+                        updates,
+                    )
+                conn.commit()
+
+            detail.update({
+                "rows_examined": len(stored),
+                "rows_corrected": len(updates),
+                "corrections_by_field": dict(sorted(
+                    field_counts.items(), key=lambda kv: -kv[1])),
+                # A collision here means `DERIVED` missed a superset name and `_put` caught it.
+                # Non-empty is a parser bug to fix before trusting the numbers.
+                "collisions": sorted(set(collisions)),
+            })
+            state["rows"] = 0 if dry_run else len(updates)
             state["detail"] = detail
 
     return detail

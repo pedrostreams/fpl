@@ -107,6 +107,26 @@ in. To exercise one, simulate rather than wait — either rewrite `finished` as
 finished = true` for a few GW1 rows with the revert in a `finally`. `dimensions` re-syncs
 `finished` from the API daily, so even a crashed run self-heals.
 
+**But "self-heals daily" is the whole problem for anything a manager reads between the last
+whistle and the next deadline.** `finished` is FPL's flag, flipped per fixture only once bonus is
+applied, and `events.data_checked` lags further still — GW2 was `is_current` with
+`data_checked = false` a day after its final match. So a view keyed on `finished` is wrong for
+that entire window, which is *exactly* when the decision pages matter. Found 2026-09-01:
+`next_gameweek` was `min(event) where not finished` and answered **GW2**, deadline four days
+gone, so `/gw` briefed a locked week — and through that one view it reached `captain_picks`,
+`target_players`, `sell_candidates`, `rotation_pairs`, `gameweek_shape`, the fixture percentages
+and `watchlist_detail`. In preseason the two definitions are indistinguishable, which is why it
+shipped. **Migration 0038 keys it on `deadline_time > now()` instead**: published weeks ahead,
+never moves retroactively, and true without an ingest. Prove a change to it by simulating the
+lag — `update fixtures set finished = false` for a played gameweek in a rolled-back transaction —
+because the healthy state cannot distinguish the two definitions.
+
+Related, and it is what made the above look like a write failure: **`fixtures.updated_at` is
+never stamped.** `db.upsert` only touches `updated_at` when the column appears in the rows it is
+given, and `dimensions.build` does not emit it — so the value is the original insert time and
+reads as "this table has not been written in five weeks". Do not use `updated_at` on any table
+whose builder omits it as a freshness signal; `sync_runs` is the liveness record.
+
 ## The three things that will bite you
 
 1. **Preseason carry-over.** Until GW1, `bootstrap-static.elements` aggregates describe
@@ -451,6 +471,29 @@ Short version:
   and "malformed", which is why the client takes `date` rather than `datetime`. And **market
   depth is per competition**: the Premier League's is unmeasured until 19–20 August because no
   PL fixture falls inside the ~15h deep-market window before then. Details in §3.5.
+
+  **A derived market is a superset of the plain market's name, and it is served after it.**
+  `Antall kort over/under 2.5`, `1. omgang - totalt antall mål - over/under 1.5`,
+  `X vinner og holder nullen`, `1. omgang: HUB og begge lag scorer` — each one matched the
+  recogniser for a plain market, and `parse_markets` wrote unconditionally, so the **last**
+  writer won. Measured 2026-09-01 on one 146-market fixture: six of eight fields wrong.
+  `p_over_25` and `p_over_35` held **booking counts**; `p_btts` and `p_over_15` had been wiped
+  to NULL; both clean sheets held win-to-nil, understating P(clean sheet) by exactly P(0-0) —
+  5.8pp mean across 472 of 472 stored rows. Two defences now, and the second is the one that
+  does not need maintaining: `DERIVED` skips half-scoped, combined and non-goal names, and
+  `_put` is **write-once** so the plain market (served first) cannot be displaced — a collision
+  is reported into `unrecognised_markets` instead. The whole-match goals branch also *requires*
+  `mal` in the name, which is what keeps the corner and card lines nobody enumerated out of a
+  goals column. **A parser fix does not reach history**: `python -m sync.cli market_odds
+  --reparse` re-derives every stored row from its own raw payload — the one place this table is
+  updated rather than appended to, safe only because `markets` holds the response verbatim.
+
+  `market_odds_check`'s clean-sheet cross check is what caught all of it, and it is the only
+  assertion in that view independent of our own parse: a home clean sheet **is** the away side
+  failing to score, priced separately by the bookmaker. `goal_lines_ordered` passed throughout —
+  card 2.5 > card 3.5 preserves the ordering by coincidence, and the NULL `p_over_15` dropped
+  its row out of the `bool_and` through the view's own `where ... is not null`. That is the
+  zero-row trap in this file's check-view section, met in the wild.
 - **FBref — do not use.** Lost its Opta licence January 2026; advanced data deleted. A
   second loss after the StatsBomb termination. Basic stats and historical archive only.
 - **Sportmonks — not used here.** The FPL API already supplies Opta xG.

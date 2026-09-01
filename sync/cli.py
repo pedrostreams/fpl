@@ -40,9 +40,14 @@ JOBS = (
 )
 
 
-def job_runner(name: str):
-    """Import `sync.jobs.<name>` and return its `run`. Raises only for that one job."""
-    return import_module(f".jobs.{name}", package=__package__).run
+def job_runner(name: str, entry: str = "run"):
+    """Import `sync.jobs.<name>` and return its entry point. Raises only for that one job.
+
+    `entry` exists for `market_odds --reparse`, which re-derives stored rows instead of
+    fetching. Same lazy-import rule as `run`: naming the module here rather than at the top of
+    this file is what keeps the hourly snapshot from pulling in enrichment dependencies.
+    """
+    return getattr(import_module(f".jobs.{name}", package=__package__), entry)
 
 # Jobs that accept --season.
 SEASON_JOBS = ("understat", "odds", "market_odds", "core_insights")
@@ -75,6 +80,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="understat only: discard stored identity mappings and resolve "
                              "from scratch. Use after changing the matching logic; it also "
                              "discards manual corrections")
+    parser.add_argument("--reparse", action="store_true",
+                        help="market_odds only: re-derive stored probabilities from each "
+                             "row's own raw payload, no network. Use after changing "
+                             "parse_markets — a parser fix does not reach history")
     args = parser.parse_args(argv)
 
     config.load_dotenv()
@@ -102,8 +111,9 @@ def main(argv: list[str] | None = None) -> int:
             kwargs["season"] = args.season
         if name == "understat":
             kwargs["rematch"] = args.rematch
+        entry = "reparse" if (args.reparse and name == "market_odds") else "run"
         try:
-            result = job_runner(name)(client, **kwargs)
+            result = job_runner(name, entry)(client, **kwargs)
             # verify is read-only and formats its own tables; a JSON dump would just
             # repeat what it already printed.
             if name == "verify":

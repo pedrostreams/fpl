@@ -100,6 +100,21 @@ deep = [
     market(f"{HOME} holder nullen", [("Ja", "4.00"), ("Nei", "1.25")]),
     market(f"{AWAY} holder nullen", [("Ja", "3.50"), ("Nei", "1.30")]),
     market("Korrekt resultat", [("1-0", "8.00"), ("2-1", "9.00")]),
+    # Derivations, placed AFTER the plain markets exactly as Norsk Tipping serves them. Every
+    # one of these silently overwrote a field until 2026-09-01, so their prices are chosen to
+    # be nothing like the plain ones — if a skip stops working, the assertion below moves a
+    # long way rather than a little. They must be skipped *silently*: a derived market is
+    # recognised, so reporting it unknown would bury the genuinely unfamiliar names.
+    market(f"{HOME} vinner og holder nullen", [("Ja", "6.00"), ("Nei", "1.15")]),
+    market(f"{AWAY} vinner og holder nullen", [("Ja", "5.00"), ("Nei", "1.20")]),
+    market("HUB og begge lag scorer", [("H og Ja", "4.50"), ("B og Ja", "5.50")]),
+    market("Begge lag scorer og over/under 2.5 mål", [("Ja og Over", "2.70"), ("Ja og Under", "4.10")]),
+    market("1. omgang: HUB og begge lag scorer", [("H og Ja", "9.00"), ("B og Ja", "11.0")]),
+    market("1. omgang - totalt antall mål - over/under 0.5", [("Over", "1.45"), ("Under", "2.70")]),
+    market("1. omgang - totalt antall mål - over/under 1.5", [("Over", "2.80"), ("Under", "1.42")]),
+    market("1. omgang - totalt antall mål - over/under 2.5", [("Over", "6.50"), ("Under", "1.11")]),
+    market("Antall kort over/under 2.5", [("Over", "1.40"), ("Under", "2.85")]),
+    market("Antall kort over/under 3.5", [("Over", "1.90"), ("Under", "1.90")]),
 ]
 probs, unknown = parse_markets(deep, HOME, AWAY)
 check("nothing unrecognised", unknown, [])
@@ -113,6 +128,19 @@ check("away scores 1+", probs["p_away_scores"], 0.76190)
 check("away scores 2+", probs["p_away_scores_2plus"], 0.46053)
 check("home clean sheet", probs["p_home_clean_sheet"], 0.23810)
 check("away clean sheet", probs["p_away_clean_sheet"], 0.27083)
+
+print("\nA derivation must not overwrite the plain market (regression, found 2026-09-01)")
+# Every check above already pins the plain value, so the derivations being present is itself
+# the regression test. These name what each one broke, because a bare number moving tells the
+# next reader nothing about which market stole the field.
+check("clean sheet is the clean sheet, not win-to-nil", probs["p_home_clean_sheet"], 0.23810)
+check("away clean sheet likewise", probs["p_away_clean_sheet"], 0.27083)
+check("p_btts survives three combined markets", probs["p_btts"], 0.58974)
+check("p_over_05 is full match, not first half", probs.get("p_over_05"), None)
+check("p_over_15 is full match, not first half", probs["p_over_15"], 0.76190)
+check("p_over_25 is goals, not bookings", probs["p_over_25"], 0.52632)
+check("p_over_35 is goals, not bookings", probs["p_over_35"], 0.36585)
+check("no field claimed twice", [u for u in unknown if u.startswith("COLLISION")], [])
 
 print("\nInternal consistency — the assertions market_odds_check makes on real rows")
 check("P(2+) <= P(1+), home", probs["p_home_scores_2plus"] <= probs["p_home_scores"], True)

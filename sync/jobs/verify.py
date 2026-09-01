@@ -134,6 +134,16 @@ def run(
             group by season, source order by season desc, source
         """)))
 
+        # This assertion is **preseason-only**, and leaving it ungated turned it into a
+        # permanent failure the moment GW1 kicked off: 358 rows on 2026-08-31, 364 the next
+        # morning, climbing with every fixture played. Before GW1 a bootstrap aggregate
+        # describes the PREVIOUS season, so minutes on a current-season row mean
+        # `config.aggregates_season` was bypassed. After GW1 those same rows carry this
+        # season's minutes and are simply correct — there is nothing left to assert.
+        #
+        # Mirrors `config.is_preseason`: no event `is_current` AND none `finished`, so one
+        # flag quirk cannot flip it alone. The count is printed either way, because a check
+        # that disappears silently is indistinguishable from one that never ran.
         current = db.fetch(conn, "select name from seasons where is_current order by name desc limit 1")
         if current:
             season = current[0]["name"]
@@ -141,7 +151,19 @@ def run(
                 select count(*) as n from player_season_totals
                 where season = %s and source = 'bootstrap' and coalesce(minutes, 0) > 0
             """, (season,))
-            if bad[0]["n"]:
+            # Season-scoped on purpose. Unscoped, the day 2025-26 is loaded its finished
+            # events would pin `preseason` to false forever — and the naming of the column
+            # has to be explicit here for the reason at the top of CLAUDE.md.
+            pre = db.fetch(conn, """
+                select not exists (select 1 from events e
+                                    where e.season = %s and e.is_current)
+                   and not exists (select 1 from events e
+                                    where e.season = %s and e.finished) as preseason
+            """, (season, season))
+            preseason = bool(pre and pre[0]["preseason"])
+            print(f"\n=== bootstrap rows with minutes under {season}: {bad[0]['n']} "
+                  f"({'asserted, preseason' if preseason else 'expected, season is live'}) ===")
+            if preseason and bad[0]["n"]:
                 problems.append(
                     f"{bad[0]['n']} bootstrap rows filed under the current season "
                     f"({season}) already have minutes — preseason carry-over may be "
@@ -495,11 +517,23 @@ def run(
                         f"{d['workflow']}: {d['pending']} dispatches never got a response — "
                         f"pg_net's background worker may be stopped"
                     )
+                # Cadence is per workflow, and one hourly threshold for all of them failed
+                # `sync-daily` every Monday-to-Thursday morning: market-odds is
+                # `23 */2 * * *` — two-hourly — with the extra hourly job only on Friday,
+                # Saturday and Sunday (`53 * * * 5,6,0`). So a 101-minute gap on a Tuesday
+                # was the schedule working exactly as written. Keep this table in step with
+                # `cron.schedule` in migrations 0019 and 0024; an unlisted workflow falls back
+                # to hourly, which is the tighter assumption and so fails loudly rather than
+                # quietly.
+                max_gap = {
+                    "sync-snapshot.yml": 90,       # hourly at :17, plus the price window
+                    "sync-market-odds.yml": 150,   # two-hourly at :23 outside Fri-Sun
+                }.get(d["workflow"], 90)
                 gap = d["minutes_since_last"]
-                if gap is not None and gap > 90:
+                if gap is not None and gap > max_gap:
                     problems.append(
-                        f"{d['workflow']}: last dispatch {int(gap)} minutes ago, scheduled "
-                        f"hourly — check `select * from cron.job` is still active"
+                        f"{d['workflow']}: last dispatch {int(gap)} minutes ago, expected "
+                        f"within {max_gap} — check `select * from cron.job` is still active"
                     )
         else:
             # An empty view means no dispatch in 24 hours at all, which is the pg_cron
