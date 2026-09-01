@@ -146,6 +146,27 @@ whose builder omits it as a freshness signal; `sync_runs` is the liveness record
    Related: expected stats (xG/xA/xGI/xGC) are **zero before 2022/23**, so xG backtests
    have four seasons, not twenty. Details in `docs/DATA_SOURCES.md` §2.1.
 
+   **That rule is about COMPLETED seasons, and applying it unconditionally deletes the season
+   being played.** `history_past` comes from `element-summary.history_past` and is written only
+   once a season is over, so the in-progress season has exactly one source and it is
+   `bootstrap`. `player_stats_season` was `where source = 'history_past'` full stop. Measured
+   2026-09-01, two gameweeks in: 626 rows existed for 2026-27 in `player_season_totals` and
+   **none** in `player_stats_season`, so `player_scout`'s join on `ctx.stats_season` matched
+   nothing for all 626 players and *every* stat column came back NULL — `minutes` and
+   `total_points` as much as the per-90s. 626 of 626 `is_cold_start`, `captain_picks` and
+   `target_players` empty, `/players` and the player page stripped of most columns.
+
+   Two things make this worth remembering beyond the one fix (migration 0039). **Preseason
+   could not tell the bug from the design**: before GW1 `stats_season` pointed at 2025-26,
+   which does have `history_past`, so the view was only ever exercised on the one season where
+   its filter was harmless. And **it reads exactly like the 450-minute floor simply not being
+   met yet** — the obvious conclusion is "wait for GW5 and the minutes arrive", which would
+   have been wrong: at GW5 those rows are still `source = 'bootstrap'` and still excluded, so
+   the screens would have stayed empty all season looking like a threshold coming good. When an
+   in-season screen is empty, check the row count of the *source* view before believing a
+   threshold. 0039 admits bootstrap for `current_season` only, with `distinct on` preferring
+   `history_past` for the day this season ends and both sources qualify at once.
+
 4. **`player_snapshots` cannot be backfilled.** The FPL API has no history endpoint. It's
    written **insert-on-change** against `snapshot.WATCHED` because a naive hourly insert
    of 558 players is ~4M rows/season (~600 MB), over Supabase's 500 MB free tier. If you
