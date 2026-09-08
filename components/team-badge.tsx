@@ -13,7 +13,7 @@
  * still soften on a retina screen.
  *
  * Same two rules as `player-photo.tsx`, for the same measured reasons: plain `<img>` so the
- * browser fetches over the user's own connection instead of Vercel's optimiser tripping the
+ * browser fetches over the user's own connection instead of a server-side optimiser tripping the
  * CDN's rate limit, and a CSS fallback rather than an onError handler so a missing crest costs
  * nothing and needs no client component.
  */

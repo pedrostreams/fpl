@@ -6,6 +6,7 @@ import { TeamStyleBody } from '@/components/team-style'
 import { COLUMNS_BY_KEY } from '@/lib/columns'
 import { POSITION_VAR, fmt, fmtInt, fmtPct, formatCell, ordinal } from '@/lib/format'
 import {
+  getRoutableCodes,
   getSeasonContext,
   getTeamForm,
   getTeamProfile,
@@ -13,7 +14,13 @@ import {
   getTeamStyle,
 } from '@/lib/queries'
 
-export const revalidate = 300
+/** Prerendered per club, for the same reason as the player profile — see that file. */
+export const dynamicParams = false
+
+export async function generateStaticParams() {
+  const codes = await getRoutableCodes('team')
+  return codes.map((code) => ({ code: String(code) }))
+}
 
 /**
  * One club: how it plays, how it ran, and who is in it.

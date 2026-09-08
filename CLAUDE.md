@@ -9,9 +9,13 @@ Football Fix Premium subscription with free sources. See `README.md` for setup a
 ## Stack
 
 Python sync (GitHub Actions, **clocked by pg_cron**) → Supabase Postgres → Next.js + TS web
-app (Phase 4, not built yet). Sync writes straight to Postgres via `psycopg`; there is no
-`Python → JSON → TypeScript` hop, deliberately — that pattern is what left
-`../Sporting_Director_Game`'s enrichment "currently manual".
+app, exported to static HTML and hosted on Cloudflare Workers at fpl.peiling.tech. Sync writes
+straight to Postgres via `psycopg`; there is no `Python → JSON → TypeScript` hop, deliberately —
+that pattern is what left `../Sporting_Director_Game`'s enrichment "currently manual".
+
+The site is a **build artefact**: every page is a file rendered from Postgres at deploy time, so
+the numbers on screen change when the site is rebuilt, not when the database is written. Each sync
+job POSTs a Cloudflare deploy hook when it has written something. See **Deployment**.
 
 ## Commands
 
@@ -281,6 +285,15 @@ is usually taken by one of the sibling projects), `npm run build`, `npm run type
   may read all of this public football data". The connection string never reaches the browser.
 - **The pool must be a `globalThis` singleton.** Next re-evaluates modules on every edit in
   dev; without it each hot reload leaks a fresh set of connections and exhausts the pooler.
+- **`lib/db.ts` runs in two places.** Node during `next build`, where a pool is right and does
+  all of the reading; and the Cloudflare Worker for `/api/*`, where a pool is *wrong* — a socket
+  cannot outlive the request that opened it, and reusing one fails with "Cannot perform I/O on
+  behalf of a different request". The Worker opens one connection per request and installs it
+  with `runWithClient`, so `lib/queries.ts` is identical in both.
+- **Parameterless queries are cached for the life of a build.** 687 pages each re-running the
+  layout's search index exhausted the pooler. No parameters means the answer is the same for every
+  page, so it is asked once; the per-player views are batched by `groupedByPlayer` for the same
+  reason — six queries where there were four thousand.
 - **`numeric` arrives as a string** from node-postgres, because it can hold values outside
   IEEE 754. Everything goes through `num()` in `lib/db.ts` — sorting the raw strings would
   put 9 after 10.
@@ -295,8 +308,12 @@ is usually taken by one of the sibling projects), `npm run build`, `npm run type
   every full-time starter as "37th percentile" on the captain panel.
 - **`typedRoutes: true`** means a `<Link>` to a route that doesn't exist is a build error.
   That is deliberate — it caught the nav pointing at unbuilt pages.
-- Pages use segment `revalidate = 300`. Cache Components (`cacheComponents: true`) are opt-in
-  in Next 16 and not enabled; the sync writes hourly at most, so five minutes costs nothing.
+- **No page renders per request, and this is load-bearing.** `output: 'export'` in
+  `next.config.ts`; `scripts/check-static.mjs` fails the build if anything slips. See
+  **Deployment** for why it is a hard error rather than a slow page.
+- Pages used segment `revalidate = 300` until the move off Vercel. ISR is gone: it polled every
+  five minutes for data the sync writes a few times a day, and a deploy hook is both cheaper and
+  more accurate. Cache Components (`cacheComponents: true`) remain off.
 
 **Design language is `.claude/context/DESIGN.md`** — tokens, the heatmap contract, table and
 badge conventions, what's deliberately absent, and the open questions the design round has to
@@ -481,6 +498,44 @@ Two things that fell out of moving it, both worth knowing before touching a floo
   0042 gives both branches a single `defence_is_declining` boolean, so the rule is structural
   rather than asserted. Expect more of this shape: a floor is also a mask.
 
+## Deployment
+
+Cloudflare Workers, free plan, at **fpl.peiling.tech**. `npm run deploy` locally; Workers Builds
+deploys on every push to `main`.
+
+**The invariant: nothing may render per request.** The free plan allows **10ms of CPU per
+invocation**. Measured before the move: `/players` cost **300ms** to render, a player profile 45ms.
+Exceeding the limit does not serve a slow page, it serves **Error 1102** and nothing else. So every
+page is exported to `out/` as HTML and served by Cloudflare's asset layer, which is not metered at
+all and — the part that matters — never invokes the Worker.
+
+What breaks it, and all of these are one-line changes someone will make innocently: adding
+`searchParams` to a page, reading `cookies()` or `headers()`, exporting `revalidate` or
+`dynamic = 'force-dynamic'`, or adding a `[param]` route without `generateStaticParams`.
+`scripts/check-static.mjs` runs after every build and fails on all of them.
+
+**The one exception is `worker/index.ts`**, which serves three `/api` endpoints — the watchlist and
+saved views, the only state a visitor can change and therefore the only state that cannot be a
+file. They fit the budget because they are pure I/O: Cloudflare bills CPU, not the wait for
+Postgres. They reach the database through **Hyperdrive**, which pools next to Supabase and
+terminates TLS itself — the `rejectUnauthorized: false` in `lib/db.ts` is a Node-only escape hatch
+the Workers runtime ignores.
+
+Because those two live at runtime, **user state is fetched in the browser**
+(`components/user-state.tsx`), not passed down as props. A heart baked into HTML built an hour ago
+would show a player who had since been un-hearted.
+
+**Freshness is a deploy.** `.github/actions/rebuild-site` POSTs a Workers Builds deploy hook at the
+end of every sync job that writes. Builds run on Cloudflare's 3,000 free minutes a month, not
+GitHub's 2,000 — this repo is private and `verify` already projects ~1,654 of those going to
+snapshot dispatches.
+
+**Not the Cloudflare Next adapter.** `@opennextjs/cloudflare` was tried first. It writes
+prerendered pages into `.open-next/cache` as incremental-cache entries rather than as assets, so
+every page view goes through the Worker to read one back — a 3.4MB HTML page inside a 10ms budget,
+for no benefit now that nothing revalidates. Its peer range also excludes the `next@16.2.x` this
+project was pinned to, which is why the first attempt at this failed outright.
+
 ## Data sources — read before adding a stat
 
 `docs/DATA_SOURCES.md` is the single source of truth, and **any change to a source, stat,
@@ -557,6 +612,12 @@ fetch so an outage costs future data, not past data.
   fuzzily at query time. Log unmatched rows to `tmp/<source>-unmatched.json`.
 - Verify with `python -m sync.cli <job> --dry-run` and the probe script. Then check
   `select * from sync_freshness;`.
+- New page → it must prerender. No `searchParams`, no `cookies()`/`headers()`, no `revalidate`,
+  and a `[param]` route needs `generateStaticParams` plus `dynamicParams = false`. Read anything a
+  visitor can change in the browser instead, through `components/user-state.tsx`. `npm run build`
+  fails on a page that renders per request — see **Deployment** for why that is not negotiable.
+- New per-player query → batch it with `groupedByPlayer`. A `where player_code = $1` query runs
+  655 times in a build, and the pooler does not survive it.
 
 ## Reference projects
 

@@ -444,15 +444,23 @@ The weekly entry point, and the newest thing here — every number on it is curr
 
 ### Connection budget
 
-- [ ] **The Supabase session pooler allows 15 clients total, shared with the sync jobs.**
-      `/players`, `/player/[code]` and `/team/[code]` are dynamic, so each warm Vercel instance
-      holds up to `max: 3`. Saturating it makes the *hourly snapshot* fail — the one table with
-      no backfill path — because someone was browsing. Seen locally on 2026-07-27 with several
-      builds and preview servers running at once
-- [ ] **Consider moving the web app to the transaction pooler** (port 6543 rather than 5432).
-      It is built for exactly this shape — many short-lived serverless clients — where session
-      mode is not. The sync jobs should stay on the session pooler
-- [ ] Check `select count(*) from pg_stat_activity` under real traffic before deciding
+**Reading the site no longer touches Postgres at all.** Every page is a static export, so
+traffic cannot saturate the pooler however many people are browsing. What used to be the risk
+here — three dynamic routes, each warm instance holding `max: 3` — is gone with the instances.
+Two narrower budgets replace it:
+
+- [ ] **The build is now the heaviest reader.** 687 pages in one process, 2 workers, `max: 3`
+      each. The first attempt at prerendering the profiles exhausted the pooler outright
+      (`timeout exceeded when trying to connect`, then server-side cancellations), which is why
+      the per-player views are batched by `groupedByPlayer` and parameterless queries are cached
+      per build. Watch for it again if a new page adds a `where … = $1` query per row
+- [ ] **A build can collide with a sync.** Deploy hooks fire *after* a job finishes, so the
+      normal case is sequential — but `sync-enrich` is long and `sync-snapshot` is hourly, so
+      overlap is possible. Check `select count(*) from pg_stat_activity` during a build once
+      real traffic exists
+- [ ] **The `/api` endpoints go through Hyperdrive**, which pools next to the database rather
+      than opening a connection per isolate. Watch its query count against the free plan's
+      100,000/day — a page view costs zero of them, only a heart or a saved view costs one
 
 ### Search
 
@@ -471,12 +479,17 @@ The weekly entry point, and the newest thing here — every number on it is curr
 - [ ] Custom views survive a catalogue change: retire a column from `lib/columns.ts`, reload a
       saved view that used it, and confirm the view still opens with that column skipped
 - [ ] The catalogue audit is silent. `getPlayerWide` logs `[columns] … no matching column in
-      player_wide` once per process if a key is mistyped — check the Vercel function logs
+      player_wide` once per process if a key is mistyped. It runs at build time now, so the
+      place to look is the **Workers Builds log**, not a request log — and a mistyped key ships
+      as a wrong screen that nothing else complains about
 - [ ] Headed xG and team corner figures are still **null**, not 0, for unmapped players and
       promoted clubs. `player_wide_check.head_xg_unknown` and `team_corners_unknown` must both
       stay above zero until Understat covers everyone
 - [ ] Payload still ~142 KB gzipped with in-season data. Measure, don't assume
-- [ ] `/scout` still 308s to `/players?view=overview`
+- [ ] `/scout` still redirects to `/players?view=overview`, and `/gems` to
+      `?view=differentials`. Both are 301s from `public/_redirects` now rather than Next
+      redirects, applied by Cloudflare before it looks for a file — so they are worth actually
+      opening once after the first deploy, since no build error can tell you they broke
 
 ### `/scout`
 
@@ -545,7 +558,14 @@ The weekly entry point, and the newest thing here — every number on it is curr
       `https://fantasy.premierleague.com/leagues/XXXXXX/standings/c`. This is the feature
       Fantasy Football Fix structurally cannot provide — it computes EO against the global
       top-10k, not against the ten or twenty squads you are actually trying to beat
-- [ ] **Deploy to Vercel** with `DATABASE_URL` set to the session pooler host
+- [ ] **Finish the Cloudflare setup** — the steps that need a login, listed in the README's
+      Deploy section: `wrangler hyperdrive create` and its id into `wrangler.jsonc`, the first
+      `npm run deploy`, `fpl.peiling.tech` as a custom domain, Workers Builds connected to
+      `main` with `DATABASE_URL` as a build variable, and a deploy hook stored as the
+      `CLOUDFLARE_DEPLOY_HOOK` repository secret
+- [ ] **Confirm a heart survives a reload.** The watchlist and saved views are the only state
+      fetched in the browser rather than built into the page; every other bug in this file is
+      about numbers, and this is the one that would be about the app forgetting something
 - [ ] **Visual design review.** Every screen has been verified by asserting on rendered HTML,
       never by looking at it. Spacing, weight and contrast are unaudited. Eight of the ten open
       questions in [DESIGN.md](../.claude/context/DESIGN.md) §9 are independent of the season; the diverging colour

@@ -20,7 +20,8 @@ Norwegian friend-group mini-league.
 | Store | Supabase Postgres (`eu-central-1`) |
 | Sync runtime | GitHub Actions cron → Python → Postgres |
 | Enrichment scrapers | `soccerdata` (Understat), `ScraperFC` + `curl_cffi` (Sofascore) |
-| Web app (Phase 4) | Next.js + TypeScript, read-only over SQL views |
+| Web app | Next.js + TypeScript, read-only over SQL views |
+| Hosting | Static export on Cloudflare Workers (free plan), `fpl.peiling.tech` |
 
 Sync is Python end-to-end and writes straight to Postgres. That's a deliberate change
 from `Sporting_Director_Game`, whose `Python → JSON → TypeScript` hop is documented as
@@ -85,7 +86,8 @@ python -m sync.cli verify --reap-stale     # close out runs stuck on 'running'
 | `sync-daily` | `30 6 * * *` | Dimensions, fixtures, per-gameweek history |
 | `probe-sources` | `0 8 * * 1` | Source health; goes red when a scrape breaks |
 
-Set `DATABASE_URL` as a repository secret.
+Set `DATABASE_URL` and `CLOUDFLARE_DEPLOY_HOOK` as repository secrets. Every job that writes
+ends by POSTing the deploy hook, because the site is a build artefact — see **Deploy**.
 
 **Note:** GitHub disables scheduled workflows after 60 days without repo activity, and
 cron is best-effort under load. Every job is idempotent so a missed run self-heals, and
@@ -93,6 +95,59 @@ the `sync_freshness` view surfaces anything stale:
 
 ```sql
 select * from sync_freshness;
+```
+
+## Deploy
+
+The site is a **static export**: `next build` renders all 687 pages to `out/` and Cloudflare
+serves them as files. Nothing renders per request, and that is a requirement rather than an
+optimisation — the Workers free plan allows **10ms of CPU per invocation**, `/players` was measured
+at **300ms**, and exceeding the limit returns Error 1102 rather than a slow page. Requests to static
+assets are unmetered and never invoke the Worker, so reading the site has no CPU ceiling at all.
+`scripts/check-static.mjs` fails the build if any page slips back to rendering on demand.
+
+The only code that runs per request is `worker/index.ts`: three `/api` endpoints for the watchlist
+and saved views, which are the only state a visitor can change. They are one SQL statement each,
+and Cloudflare bills CPU rather than the wait for Postgres.
+
+### One-time setup
+
+Everything below needs a Cloudflare login, so it is done once by hand.
+
+```bash
+npx wrangler login
+
+# 1. Hyperdrive pools the connection next to Supabase and terminates TLS itself.
+#    Copy the id it prints into the "hyperdrive" block in wrangler.jsonc.
+npx wrangler hyperdrive create fpl-db --connection-string="$DATABASE_URL"
+
+# 2. First deploy, which also creates the Worker.
+npm run deploy
+```
+
+Then, in the Cloudflare dashboard under **Workers & Pages → fpl**:
+
+| Step | Where | Value |
+|---|---|---|
+| Custom domain | Settings → Domains & Routes | `fpl.peiling.tech` (the zone is already on Cloudflare, so DNS is automatic) |
+| Deploy on push | Settings → Builds → Connect | repo `pedrostreams/fpl`, branch `main`, build `npm run build`, deploy `npx wrangler deploy` |
+| Build variable | Settings → Builds → Variables | `DATABASE_URL` — the build renders every page from Postgres |
+| Deploy hook | Settings → Builds → Deploy Hooks | create one for `main`, then add the URL as the `CLOUDFLARE_DEPLOY_HOOK` repository secret |
+
+### Freshness
+
+There is no ISR and no five-minute cache. Every sync job that writes ends by POSTing the deploy
+hook, so Cloudflare rebuilds when the data actually changed. Builds take ~2 minutes and run on
+Cloudflare's 3,000 free build minutes a month — deliberately not GitHub's 2,000, of which
+`verify` already projects ~1,654 going to snapshot dispatches.
+
+### Locally
+
+```bash
+npm run dev        # PORT=3210; reads Postgres directly over DATABASE_URL
+npm run build      # the export, plus the static-only check
+npm run preview    # wrangler dev: the real Worker, the real assets, one env var short —
+                   # CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=$DATABASE_URL
 ```
 
 ## Status

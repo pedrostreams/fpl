@@ -6,8 +6,6 @@ import { fmt, fmtInt, fmtPct, fmtPrice } from '@/lib/format'
 import { tipRows } from '@/lib/tooltip'
 import { getManager, getMySquad, getSeasonContext } from '@/lib/queries'
 
-export const revalidate = 300
-
 /**
  * My fifteen.
  *

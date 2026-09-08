@@ -4,7 +4,7 @@
  * TWO DELIBERATE CHOICES, both from measuring the CDN rather than guessing:
  *
  * 1. Plain `<img>`, never `next/image`. The optimizer would fetch each photo *server-side*
- *    through Vercel — and resources.premierleague.com throttles sequential requests from one
+ *    through the host — and resources.premierleague.com throttles sequential requests from one
  *    IP hard. Testing it: five codes in a row returned 200, 200, 200, then dropped the TCP
  *    connection twice; requesting the "failing" code first returned 200 immediately. Nothing
  *    was missing, the IP was rate-limited. A browser spreads those requests across the user's

@@ -19,7 +19,8 @@ constraints that changed the sequencing. Those are in §2 — read them before p
 | Store | Supabase Postgres (`eu-central-1`) | Same as `vm26` and `Sporting_Director_Game`. |
 | Sync runtime | **GitHub Actions** | Only free host doing sub-daily cron *and* Python. Vercel Hobby cron is 1×/day and can't run `soccerdata` at all. |
 | Ingest language | **Python → Postgres directly** | `soccerdata` is Python-only. Drops the `Python → JSON → TS` hop that left SDG's enrichment "currently manual". |
-| Web app | Next.js + TS on Vercel, read-only over SQL views | Phase 4. |
+| Web app | Next.js + TS, read-only over SQL views | Phase 4. |
+| Hosting | **Static export on Cloudflare Workers**, free plan | Pages are files, so reads are unmetered and never invoke a Worker — the free plan's 10ms CPU limit would otherwise 1102 on `/players`, measured at 300ms. |
 | Auth | **None for v1** | Every figure we display is public data. Adding Supabase auth + RLS costs days and protects nothing. Revisit only if mini-league picks get stored. |
 
 Status: sync is live and verified against Supabase. `verify` green at 1.7 MB of 500 MB.
@@ -136,7 +137,7 @@ warns the version has breaking changes.
   state of the series, and whether the hourly job is actually running. The columns needing
   history render `·` rather than `0` — see `.claude/context/DESIGN.md` §1.2 on the three kinds
   of absent.
-- Deploy to Vercel, wire `sync_freshness` into a visible staleness indicator.
+- Deploy to Cloudflare, wire `sync_freshness` into a visible staleness indicator.
 - Buffer. Four weeks with no slack is not a plan.
 
 ---

@@ -22,6 +22,9 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 
+# Cloudflare — wrangler's local state. The exported site itself is out/, covered above.
+.wrangler/
+
 # OS
 .DS_Store
 Thumbs.db

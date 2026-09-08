@@ -1,0 +1,13 @@
+# Next fingerprints everything under /_next/static, so those URLs are immutable by construction
+# and can be cached forever. Cloudflare serves them without invoking the Worker.
+#
+# There is deliberately no `/*` rule beside this one. Cloudflare applies EVERY matching rule and
+# concatenates the results, so a catch-all produced
+#
+#   Cache-Control: public, max-age=31536000, immutable, public, max-age=0, must-revalidate
+#
+# on exactly the files that most needed a clean one. The HTML needs no rule anyway: Cloudflare's
+# own default for static assets is `public, max-age=0, must-revalidate`, which is what the HTML
+# wants — revalidate every time, because a deploy hook rebuilds the site whenever the sync writes.
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable

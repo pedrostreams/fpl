@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { COLUMNS, GROUP_ORDER, PINNED } from '@/lib/columns'
 import type { Filters } from '@/lib/columns'
-import { deleteView, saveView } from '@/lib/actions'
+import { useUserState } from '@/components/user-state'
 import type { SavedView } from '@/lib/queries'
 
 /**
@@ -31,6 +31,9 @@ export function ColumnPicker({
   onApply: (columns: string[]) => void
   onClose: () => void
 }) {
+  // Both writes live in the provider so that saving a view also refreshes the list the
+  // preset row renders from — the picker used to rely on a server action revalidating the page.
+  const { saveView, deleteView } = useUserState()
   const [picked, setPicked] = useState<string[]>(selected)
   const [name, setName] = useState(existing?.name ?? '')
   const [error, setError] = useState<string | null>(null)

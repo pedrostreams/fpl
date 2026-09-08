@@ -1,16 +1,7 @@
 import { PlayersView } from '@/components/players-view'
-import { decodeFilters } from '@/lib/filters'
 import { relativeAge } from '@/lib/format'
-import {
-  getPlayerWide,
-  getSavedViews,
-  getSeasonContext,
-  getSyncHealth,
-  getWatchlistCodes,
-} from '@/lib/queries'
+import { getPlayerWide, getSeasonContext, getSyncHealth } from '@/lib/queries'
 import { tipRows } from '@/lib/tooltip'
-
-export const revalidate = 300
 
 /**
  * The one table.
@@ -23,28 +14,20 @@ export const revalidate = 300
  * Everything ships at once — 89 columns × 558 players, 53 KB gzipped, measured — because a
  * column picker that had to fetch on every choice would be unusable, and because that is
  * still less than the old single-view page sent.
+ *
+ * Prerendered, and it is the reason the whole app is. This page read `?view=` on the server,
+ * which made it the one route that had to render per request: 300ms of CPU against the
+ * Cloudflare free plan's 10ms ceiling, which is Error 1102 rather than a slow page. The view and
+ * the filters are now read from the URL in the browser — everything they touch was already
+ * client state — and the table itself, the part that costs the 300ms, is built once at deploy.
  */
-export default async function PlayersPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>
-}) {
-  const params = await searchParams
-  const [table, watchedCodes, savedViews, ctx, health] = await Promise.all([
+export default async function PlayersPage() {
+  const [table, ctx, health] = await Promise.all([
     getPlayerWide(),
-    getWatchlistCodes(),
-    getSavedViews(),
     getSeasonContext(),
     getSyncHealth(),
   ])
   const stale = health.filter((h) => h.ageSeconds === null || h.ageSeconds > 60 * 60 * 36)
-
-  const flat = new URLSearchParams()
-  for (const [k, v] of Object.entries(params)) {
-    if (typeof v === 'string') flat.set(k, v)
-    else if (Array.isArray(v) && v[0]) flat.set(k, v[0])
-  }
-  const view = flat.get('view') ?? 'overview'
 
   return (
     <div className="flex flex-col gap-4">
@@ -109,14 +92,7 @@ export default async function PlayersPage({
         </div>
       )}
 
-      <PlayersView
-        table={table}
-        watchedCodes={watchedCodes}
-        savedViews={savedViews}
-        statsSeason={ctx.statsSeason}
-        initialPreset={view}
-        initialFilters={decodeFilters(flat)}
-      />
+      <PlayersView table={table} statsSeason={ctx.statsSeason} />
     </div>
   )
 }

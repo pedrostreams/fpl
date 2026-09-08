@@ -5,8 +5,6 @@ import { Metric, Panel } from '@/components/dash'
 import { fmtInt } from '@/lib/format'
 import { getChangeFeed, getSeasonContext, getSnapshotCoverage } from '@/lib/queries'
 
-export const revalidate = 300
-
 /**
  * What moved since you last looked.
  *

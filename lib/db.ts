@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { Pool } from 'pg'
 
 /**
@@ -7,7 +8,48 @@ import { Pool } from 'pg'
  * server-side connection is both simpler and safer: the connection string never reaches the
  * browser, and no anon key has to be paired with RLS policies that would only ever say
  * "everyone may read everything" for what is entirely public football data.
+ *
+ * The same `query` runs in two places that could not be less alike, which is why it goes through
+ * `run` instead of straight at a pool:
+ *
+ *   1. Node, during `next build`. The app is a static export, so this is where all of the
+ *      reading happens — every page, all 687 of them, is rendered here against DATABASE_URL. A
+ *      long-lived process with a connection pool is exactly the right shape for that.
+ *   2. The Cloudflare Worker, for the three /api endpoints in worker/. Those exist because the
+ *      watchlist and the saved views are the only state a visitor can change, and so the only
+ *      state that cannot be baked into a file. A pool is actively wrong there: a socket cannot
+ *      outlive the request that opened it, and reusing one across requests fails with "Cannot
+ *      perform I/O on behalf of a different request".
+ *
+ * The Worker therefore opens one connection per request and puts it here with `runWithClient`,
+ * and everything in lib/queries.ts works unchanged in both environments.
  */
+
+/** A result set, narrowed to what this module actually reads off it. */
+type Rows = {
+  rows: unknown[]
+  fields: readonly { name: string; dataTypeID: number }[]
+}
+
+/** Anything that can run a parameterised query: a pooled Node client, or the Worker's. */
+export type Queryable = {
+  query(sql: string, params: unknown[]): Promise<Rows>
+}
+
+/**
+ * The connection for the request in flight, if something upstream opened one.
+ *
+ * AsyncLocalStorage rather than a module-level variable, and that is not a stylistic choice: one
+ * Worker isolate serves overlapping requests, so a shared variable would hand request B the
+ * connection request A had already closed. ALS scopes it to the call tree instead. Available in
+ * Workers under the `nodejs_compat` flag, which wrangler.jsonc sets for `pg`'s sake anyway.
+ */
+const requestClient = new AsyncLocalStorage<Queryable>()
+
+/** Run `fn` with `client` as the connection every `query` inside it will use. */
+export function runWithClient<T>(client: Queryable, fn: () => Promise<T>): Promise<T> {
+  return requestClient.run(client, fn)
+}
 
 declare global {
   // Next's dev server re-evaluates modules on every edit. Without a global the pool would
@@ -31,11 +73,15 @@ function createPool(): Pool {
     connectionString,
     // Supabase terminates TLS at the pooler with a certificate chain Node won't verify by
     // default. The connection is still encrypted; only chain verification is relaxed.
+    //
+    // Node-only, and worth knowing why the Worker cannot do the same: the Workers runtime
+    // ignores `rejectUnauthorized` and would reject this chain. That is one of the two reasons
+    // the /api handlers go through Hyperdrive — it terminates TLS itself.
     ssl: isLocal ? undefined : { rejectUnauthorized: false },
-    // The pooler is shared with the sync jobs and with every other build worker or serverless
-    // instance, so stay modest. The dashboard alone fires 11 queries concurrently; they queue
-    // on these 3 connections, which costs a few hundred milliseconds and is far cheaper than
-    // exhausting the pooler.
+    // The pooler is shared with the sync jobs and with every other build worker, so stay
+    // modest. The dashboard alone fires 11 queries concurrently; they queue on these 3
+    // connections, which costs a few hundred milliseconds and is far cheaper than exhausting
+    // the pooler.
     max: 3,
     idleTimeoutMillis: 30_000,
     // Generous on purpose. This is the wait for a free connection, not for a query, and under
@@ -44,13 +90,88 @@ function createPool(): Pool {
   })
 }
 
-export const pool: Pool = globalThis.__fplPool ?? createPool()
-if (process.env.NODE_ENV !== 'production') globalThis.__fplPool = pool
+/**
+ * Built on first use rather than at import.
+ *
+ * The Worker imports this module too — lib/queries.ts is the same file in both environments —
+ * and there is no DATABASE_URL there, so constructing a pool eagerly threw before the request's
+ * own client was ever consulted.
+ */
+let poolInstance: Pool | undefined
+
+function nodePool(): Pool {
+  poolInstance ??= globalThis.__fplPool ?? createPool()
+  if (process.env.NODE_ENV !== 'production') globalThis.__fplPool = poolInstance
+  return poolInstance
+}
+
+/**
+ * Answers to parameterless queries, for the life of a build.
+ *
+ * Prerendering 687 pages in one process means the layout's search index — 578 rows, needed so
+ * search works from every page — was fetched 687 times, along with the sync health beside it.
+ * That is what exhausted the Supabase pooler: "timeout exceeded when trying to connect", the
+ * same failure the `cpus: 2` cap in next.config.ts was already fighting, except no worker cap
+ * helps when the query count scales with the number of pages.
+ *
+ * The rule is deliberately narrow: no parameters means the answer is the same for every page in
+ * this build, so ask once. Anything parameterised — every per-club query — goes straight
+ * through, which keeps this growing with the number of distinct queries rather than the number
+ * of pages.
+ *
+ * Build only. In the Worker this would be a cache with no invalidation and an isolate's
+ * lifetime, which for the watchlist is precisely wrong — hence the early return below.
+ */
+const buildCache = new Map<string, Promise<Rows>>()
+
+async function run(sql: string, params: unknown[]): Promise<Rows> {
+  // The Worker's connection, scoped to this request. Never cached, for the reason above.
+  const client = requestClient.getStore()
+  if (client) return client.query(sql, params)
+
+  if (params.length) return nodePool().query(sql, params)
+
+  const hit = buildCache.get(sql)
+  if (hit) return hit
+  // The promise, not the result: two pages rendering concurrently must share one round trip
+  // rather than both missing and both querying.
+  const pending = nodePool().query(sql, params)
+  buildCache.set(sql, pending)
+  try {
+    return await pending
+  } catch (e) {
+    // A failed query must not be remembered as the answer for the rest of the build.
+    buildCache.delete(sql)
+    throw e
+  }
+}
 
 /** Run a read query and return typed rows. */
 export async function query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
-  const result = await pool.query(sql, params)
+  const result = await run(sql, params)
   return result.rows as T[]
+}
+
+/** A result column: its name, and the Postgres type OID that decides whether to parse it. */
+export type Field = { name: string; dataTypeID: number }
+
+/**
+ * Rows plus the result-set's own column metadata.
+ *
+ * Only `getPlayerWide` needs this, and it needs both halves for real reasons: the column
+ * catalogue is audited against the view's actual shape, so a column renamed in a migration is
+ * reported rather than silently rendering an empty table, and the type OIDs are what identify
+ * which columns arrived as `numeric` strings and have to be parsed.
+ */
+export async function queryWithFields<T>(
+  sql: string,
+  params: unknown[] = [],
+): Promise<{ rows: T[]; fields: Field[] }> {
+  const result = await run(sql, params)
+  return {
+    rows: result.rows as T[],
+    fields: result.fields.map((f) => ({ name: f.name, dataTypeID: f.dataTypeID })),
+  }
 }
 
 /**

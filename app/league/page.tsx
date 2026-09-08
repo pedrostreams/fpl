@@ -4,8 +4,6 @@ import { fmt, fmtInt, fmtPct, fmtPrice, fmtSigned } from '@/lib/format'
 import { tipRows } from '@/lib/tooltip'
 import { getLeague, getLeagueOwnership, getManager } from '@/lib/queries'
 
-export const revalidate = 300
-
 /**
  * The mini-league, and effective ownership against it.
  *

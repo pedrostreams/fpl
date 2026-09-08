@@ -3,8 +3,6 @@ import { fmtInt, relativeAge } from '@/lib/format'
 import { tipRows } from '@/lib/tooltip'
 import { getDispatchHealth, getSnapshotCoverage, getSyncHealth } from '@/lib/queries'
 
-export const revalidate = 300
-
 /**
  * Is the data alive?
  *

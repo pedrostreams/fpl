@@ -1,6 +1,3 @@
-'use server'
-
-import { revalidatePath } from 'next/cache'
 import { COLUMNS_BY_KEY } from './columns'
 import { query } from './db'
 
@@ -8,10 +5,18 @@ import { query } from './db'
  * The app's only write path.
  *
  * Everything else in this project is read-only over SQL views, with Postgres written solely by
- * the Python sync. The watchlist is the exception, and it is deliberately ungated: the app is
- * public on Vercel with no auth, so anyone with the URL can edit it. That was a considered
- * choice — one user, an obscure URL, and near-zero stakes if a stranger hearts a midfielder —
- * not an oversight. If it ever matters, the fix is a signed cookie checked here, in one place.
+ * the Python sync. The watchlist and the saved views are the exception, and they are
+ * deliberately ungated: the app is public with no auth, so anyone with the URL can edit them.
+ * That was a considered choice — one user, an obscure URL, and near-zero stakes if a stranger
+ * hearts a midfielder — not an oversight. If it ever matters, the fix is a signed cookie
+ * checked here, in one place.
+ *
+ * These were Next server actions until the move to Cloudflare. They are plain functions now,
+ * called from the three endpoints in worker/index.ts, for a reason about CPU rather than taste: a
+ * server action re-renders the current route to return a fresh RSC payload, and on /players that
+ * render was measured at 300ms — thirty times the free plan's 10ms ceiling, so hearting a player
+ * would have returned Error 1102 rather than a heart. A JSON handler does the one write and
+ * answers; the client already updates itself optimistically, so nothing needs re-rendering.
  *
  * What is NOT skipped despite being ungated: the player code is validated against `players`
  * before insert. The foreign key would reject a bad code anyway, but a clean early return
@@ -19,7 +24,7 @@ import { query } from './db'
  * reaching the database at all.
  */
 
-function parseCode(raw: unknown): number | null {
+export function parseCode(raw: unknown): number | null {
   const n = Number(raw)
   return Number.isInteger(n) && n > 0 ? n : null
 }
@@ -38,19 +43,20 @@ export async function toggleWatchlist(playerCode: number): Promise<{ watched: bo
     [code],
   )
   if (!removed.length) {
-    await query(
-      'insert into watchlist (player_code) values ($1) on conflict do nothing',
-      [code],
-    )
+    await query('insert into watchlist (player_code) values ($1) on conflict do nothing', [code])
   }
 
-  // The watchlist appears on the dashboard and the scout screen, and both are cached for five
-  // minutes. Without this a heart would look like it did nothing until the cache expired.
-  revalidatePath('/')
-  revalidatePath('/scout')
-  revalidatePath('/gems')
-
   return { watched: !removed.length }
+}
+
+export async function setWatchlistNote(playerCode: number, note: string): Promise<void> {
+  const code = parseCode(playerCode)
+  if (code === null) return
+  const trimmed = note.trim().slice(0, 280)
+  await query('update watchlist set note = nullif($2, \'\') where player_code = $1', [
+    code,
+    trimmed,
+  ])
 }
 
 // ---------------------------------------------------------------------------------------
@@ -87,22 +93,24 @@ export async function saveView(input: {
         [input.id, name, valid, JSON.stringify(input.filters), sortKey, input.sortDesc],
       )
       if (!rows.length) return { ok: false, error: 'That view no longer exists.' }
-      revalidatePath('/players')
-      return { ok: true, id: rows[0].id }
+      // Number(), because `saved_views.id` is int8 and node-postgres hands those back as
+      // strings — the declared `id?: number` was a lie, and the next caller to do arithmetic or
+      // an `Number.isInteger` check on it would have found out the hard way.
+      return { ok: true, id: Number(rows[0].id) }
     }
     const rows = await query<{ id: number }>(
       `insert into saved_views (name, columns, filters, sort_key, sort_desc)
        values ($1, $2, $3, $4, $5) returning id`,
       [name, valid, JSON.stringify(input.filters), sortKey, input.sortDesc],
     )
-    revalidatePath('/players')
-    return { ok: true, id: rows[0].id }
+    return { ok: true, id: Number(rows[0].id) }
   } catch (e) {
     // The unique index on lower(trim(name)) is the likely cause, and "pick another name" is
     // more use than a Postgres error string.
-    const msg = e instanceof Error && /saved_views_name_key/.test(e.message)
-      ? `You already have a view called "${name}".`
-      : 'Could not save that view.'
+    const msg =
+      e instanceof Error && /saved_views_name_key/.test(e.message)
+        ? `You already have a view called "${name}".`
+        : 'Could not save that view.'
     return { ok: false, error: msg }
   }
 }
@@ -110,16 +118,4 @@ export async function saveView(input: {
 export async function deleteView(id: number): Promise<void> {
   if (!Number.isInteger(id) || id <= 0) return
   await query('delete from saved_views where id = $1', [id])
-  revalidatePath('/players')
-}
-
-export async function setWatchlistNote(playerCode: number, note: string): Promise<void> {
-  const code = parseCode(playerCode)
-  if (code === null) return
-  const trimmed = note.trim().slice(0, 280)
-  await query('update watchlist set note = nullif($2, \'\') where player_code = $1', [
-    code,
-    trimmed,
-  ])
-  revalidatePath('/')
 }

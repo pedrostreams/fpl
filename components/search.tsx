@@ -11,10 +11,43 @@ import type { SearchEntry } from '@/lib/queries'
  * One search for players and clubs.
  *
  * Flat rather than two tabs, because nobody thinks "am I looking for a player or a club" — they
- * think of a name. The whole index is 578 rows and arrives with the page, so matching happens
- * in the browser: no round-trip per keystroke, and it works while a slow query is in flight
- * somewhere else.
+ * think of a name. The whole index is 674 rows and matching happens in the browser: no
+ * round-trip per keystroke, and it works while a slow query is in flight somewhere else.
+ *
+ * The index arrives from /search-index.json, fetched the first time the palette opens, rather
+ * than as a prop from the layout. As a prop it was serialised into every page of the site — 133KB
+ * of JSON, and again into the RSC payload beside it, which came to 468MB of exported output for
+ * the player profiles alone and about 400KB of every page load. Now it is one file, downloaded
+ * only by people who search, and cached by the browser for the rest of the session.
  */
+
+/**
+ * Module scope, so the index survives navigation between pages and is fetched at most once.
+ *
+ * `inFlight` and not just `cached`: opening the palette, closing it and reopening it before the
+ * response lands must not start a second download.
+ */
+let cached: SearchEntry[] | null = null
+let inFlight: Promise<SearchEntry[]> | null = null
+
+function loadIndex(): Promise<SearchEntry[]> {
+  if (cached) return Promise.resolve(cached)
+  inFlight ??= fetch('/search-index.json')
+    .then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.json() as Promise<SearchEntry[]>
+    })
+    .then((rows) => {
+      cached = rows
+      return rows
+    })
+    .catch((e) => {
+      // Let the next open try again rather than remembering the failure forever.
+      inFlight = null
+      throw e
+    })
+  return inFlight
+}
 
 /** Score a match. Higher is better; null means no match at all. */
 function score(entry: SearchEntry, q: string): number | null {
@@ -30,9 +63,11 @@ function score(entry: SearchEntry, q: string): number | null {
   return null
 }
 
-export function Search({ index }: { index: SearchEntry[] }) {
+export function Search() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
+  const [index, setIndex] = useState<SearchEntry[]>(cached ?? [])
+  const [failed, setFailed] = useState(false)
   const [q, setQ] = useState('')
   const [cursor, setCursor] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -59,6 +94,24 @@ export function Search({ index }: { index: SearchEntry[] }) {
     else {
       setQ('')
       setCursor(0)
+    }
+  }, [open])
+
+  // On first open, not on mount: nothing needs 133KB of index until someone actually searches,
+  // and every page in the app mounts this component.
+  useEffect(() => {
+    if (!open || cached) return
+    let live = true
+    loadIndex().then(
+      (rows) => {
+        if (live) setIndex(rows)
+      },
+      () => {
+        if (live) setFailed(true)
+      },
+    )
+    return () => {
+      live = false
     }
   }, [open])
 
@@ -132,9 +185,18 @@ export function Search({ index }: { index: SearchEntry[] }) {
               style={{ background: 'transparent', borderColor: 'var(--border)' }}
             />
             <div className="max-h-[60vh] overflow-y-auto">
+              {/* Three different reasons for an empty list, and they are not interchangeable:
+                  the index is still arriving, it never arrived, or it arrived and nothing
+                  matched. */}
               {results.length === 0 && (
                 <p className="px-4 py-6 text-center text-[13px]" style={{ color: 'var(--muted)' }}>
-                  Nothing matches &ldquo;{q}&rdquo;.
+                  {failed ? (
+                    'Could not load the search index.'
+                  ) : index.length === 0 ? (
+                    'Loading players and clubs…'
+                  ) : (
+                    <>Nothing matches &ldquo;{q}&rdquo;.</>
+                  )}
                 </p>
               )}
               {results.map((e, i) => (

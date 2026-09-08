@@ -1,0 +1,10 @@
+# Applied by Cloudflare before it looks for a file, and the reason next.config.ts no longer has
+# a redirects() block: a static export has no server to answer with a 308.
+#
+# /gems was retired in favour of the differentials preset once migration 0033 made `gem_score` a
+# column — the page and the preset were one table with different columns and a different row
+# filter. /scout was the same 558 rows as the Overview preset. Both are permanent, because the
+# URLs are dead rather than moved temporarily, and both are kept rather than deleted because the
+# friend group has the old links.
+/gems /players?view=differentials 301
+/scout /players?view=overview 301

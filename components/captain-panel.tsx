@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { PlayerIdentity } from '@/components/player-identity'
 import { WatchButton } from '@/components/watch-button'
+import { useUserState } from '@/components/user-state'
 import { fmt, fmtInt, fmtPct } from '@/lib/format'
 import type { CaptainPick } from '@/lib/queries'
 
@@ -78,14 +79,11 @@ function RankBar({ value, label }: { value: number | null; label: string }) {
 
 export function CaptainPanel({
   picks,
-  watchedCodes,
 }: {
   picks: CaptainPick[]
-  watchedCodes: number[]
 }) {
   const [lens, setLens] = useState<LensKey>('combined')
   const L = LENSES[lens]
-  const watched = useMemo(() => new Set(watchedCodes), [watchedCodes])
 
   const ranked = useMemo(
     () =>
@@ -214,7 +212,7 @@ export function CaptainPanel({
                 {fmt(L.of(c), 3)}
               </span>
             }
-            action={<WatchButton playerCode={c.playerCode} watched={watched.has(c.playerCode)} />}
+            action={<WatchButton playerCode={c.playerCode} />}
           />
         ))}
       </div>

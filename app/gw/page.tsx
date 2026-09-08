@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { CaptainPanel } from '@/components/captain-panel'
 import { Panel } from '@/components/dash'
 import { PlayerIdentity } from '@/components/player-identity'
+import { WatchlistBrief } from '@/components/watchlist-brief'
 import { fmt, fmtInt, fmtPct, fmtPrice } from '@/lib/format'
 import { tipRows } from '@/lib/tooltip'
 import {
@@ -12,11 +13,7 @@ import {
   getSeasonContext,
   getSellCandidates,
   getTargetPlayers,
-  getWatchlist,
-  getWatchlistCodes,
 } from '@/lib/queries'
-
-export const revalidate = 300
 
 /**
  * The gameweek brief — the one thing allaboutfpl has that we did not.
@@ -71,14 +68,12 @@ const REASON_LABEL: Record<string, string> = {
 }
 
 export default async function GameweekBrief() {
-  const [ctx, matches, captains, targets, sells, watchlist, watchedCodes] = await Promise.all([
+  const [ctx, matches, captains, targets, sells] = await Promise.all([
     getSeasonContext(),
     getNextMatches(10),
     getCaptainPicks(30),
     getTargetPlayers(5),
     getSellCandidates(6),
-    getWatchlist(),
-    getWatchlistCodes(),
   ])
 
   const gw = captains[0]?.gameweek ?? matches[0]?.gameweek ?? null
@@ -295,7 +290,7 @@ export default async function GameweekBrief() {
               <strong>ceiling</strong> for chasing one. Which you want depends on where you sit in
               the mini-league, and a single number would answer that for you and hide that it had.
             </p>
-            <CaptainPanel picks={captains} watchedCodes={watchedCodes} />
+            <CaptainPanel picks={captains} />
           </div>
         )}
       </Step>
@@ -318,49 +313,9 @@ export default async function GameweekBrief() {
       </Step>
 
       <Step n={5} question="What am I buying next?">
-        <div className="flex flex-col gap-2.5">
-          <p className="text-[13px]" style={{ color: 'var(--muted)' }}>
-            {watchlist.length === 0 ? (
-              <>
-                Nothing saved. Heart a player anywhere in the app and he appears here with his next
-                fixture and ownership drift, which is the pair of facts a transfer decision needs.
-              </>
-            ) : (
-              <>
-                {watchlist.length} saved.{' '}
-                {watchlist.some((w) => (w.netTransfersEvent ?? 0) !== 0)
-                  ? 'Ownership is moving, so watch the price.'
-                  : 'Prices are frozen until the first deadline, so nothing is moving yet.'}
-              </>
-            )}
-          </p>
-          {watchlist.slice(0, 5).map((w) => (
-            <PlayerIdentity
-              key={w.playerCode}
-              playerCode={w.playerCode}
-              name={w.webName}
-              position={w.position}
-              teamCode={w.teamCode}
-              teamShort={w.teamShort}
-              status={w.status}
-              news={w.news}
-              opponent={{ short: w.opponentShort, isHome: w.isHome }}
-              sub={
-                <>
-                  {fmtPrice(w.price)} · {fmtPct(w.selectedByPercent)} owned
-                </>
-              }
-              right={
-                <span className="num text-[12px]" style={{ color: 'var(--muted)' }}>
-                  {fmtInt(w.netTransfersEvent)}
-                  <span className="ml-1 text-[10px]" style={{ color: 'var(--faint)' }}>
-                    net
-                  </span>
-                </span>
-              }
-            />
-          ))}
-        </div>
+        {/* Client-side: the watchlist is the only thing on this page a visitor can change, so it
+            is the only thing not baked into the prerendered HTML. */}
+        <WatchlistBrief />
       </Step>
     </div>
   )

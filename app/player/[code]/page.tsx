@@ -15,11 +15,27 @@ import {
   getPlayerFixtures,
   getPlayerRow,
   getPlayerShots,
+  getRoutableCodes,
   getSeasonContext,
-  getWatchlistCodes,
 } from '@/lib/queries'
 
-export const revalidate = 300
+/**
+ * Prerendered, one file per player, and `dynamicParams = false` so nothing else is served.
+ *
+ * This route rendered on demand until the move to Cloudflare, which the free plan cannot do:
+ * rendering one of these was measured at 45ms of CPU against a 10ms ceiling, and going over is
+ * Error 1102, not a slow page. Building all of them at deploy costs build minutes — Cloudflare's,
+ * not GitHub's — and turns every profile into a static file served from the edge.
+ *
+ * `false` rather than the default: with `dynamicParams` left on, a code that is not in
+ * `search_index` would be rendered on request and fail the CPU limit instead of 404ing.
+ */
+export const dynamicParams = false
+
+export async function generateStaticParams() {
+  const codes = await getRoutableCodes('player')
+  return codes.map((code) => ({ code: String(code) }))
+}
 
 /**
  * One player, in depth.
@@ -190,13 +206,12 @@ export default async function PlayerPage({ params }: { params: Promise<{ code: s
   const code = Number(raw)
   if (!Number.isInteger(code) || code <= 0) notFound()
 
-  const [row, shots, career, fixtures, ctx, watched, pct, form] = await Promise.all([
+  const [row, shots, career, fixtures, ctx, pct, form] = await Promise.all([
     getPlayerRow(code),
     getPlayerShots(code),
     getPlayerCareer(code),
     getPlayerFixtures(code, 6),
     getSeasonContext(),
-    getWatchlistCodes(),
     getPlayerPercentiles(code),
     getPlayerForm(code),
   ])
@@ -267,7 +282,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ code: s
           <Stat row={row} k="points_per_million" pct={pct} />
           <Stat row={row} k="minutes_share" pct={pct} />
           <div className="pt-1">
-            <WatchButton playerCode={code} watched={watched.includes(code)} />
+            <WatchButton playerCode={code} />
           </div>
         </div>
       </div>

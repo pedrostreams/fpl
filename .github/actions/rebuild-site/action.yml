@@ -1,0 +1,52 @@
+name: Rebuild the site
+description: >
+  Tell Cloudflare to rebuild the static site, because the sync job that just ran changed the data
+  the site is built from.
+
+inputs:
+  deploy-hook:
+    description: >
+      A Workers Builds deploy hook URL. Pass secrets.CLOUDFLARE_DEPLOY_HOOK. The URL is the
+      credential — it carries its own identifier and needs no Authorization header — so it is a
+      repository secret and never a literal.
+    required: false
+    default: ''
+
+# WHY THIS STEP EXISTS
+#
+# The app is a static export on Cloudflare Workers: all 687 pages are HTML files, built from
+# Postgres and served off Cloudflare's edge. That is what makes it free to host — requests to
+# static assets are not metered and never invoke the Worker, so the free plan's 10ms CPU ceiling
+# cannot apply to reading the site. It also means the numbers on screen change when the site is
+# rebuilt, not when the database is written.
+#
+# So freshness is this step. It replaces `export const revalidate = 300`, which polled every five
+# minutes for data that changes a handful of times a day; a deploy hook fires when the data
+# actually changed, which is both cheaper and more accurate — nothing on screen is ever up to five
+# minutes stale.
+#
+# WHERE THE BUILD MINUTES COME FROM
+#
+# Cloudflare's, not GitHub's. This repo is private, so Actions bills against 2,000 free minutes a
+# month and `sync.cli verify` already projects ~1,654 of them going to snapshot dispatches. A
+# ~2-minute site build 24 times a day would be ~1,400 more and would not fit. Workers Builds has
+# its own 3,000 minutes; this step spends one `curl` of GitHub's.
+runs:
+  using: composite
+  steps:
+    - name: POST the deploy hook
+      shell: bash
+      env:
+        DEPLOY_HOOK: ${{ inputs.deploy-hook }}
+      run: |
+        if [ -z "$DEPLOY_HOOK" ]; then
+          # A warning rather than a failure, so the sync workflows still pass before the hook has
+          # been created. Once it is set, a broken hook DOES fail below — a rebuild that silently
+          # stopped happening would leave the site quietly frozen, and this repo has already lost
+          # three days to a sync that looked green while writing nothing.
+          echo "::warning title=No deploy hook::CLOUDFLARE_DEPLOY_HOOK is not set, so the site was not rebuilt and still shows the data from the last build. Create the hook in the Cloudflare dashboard under Workers > fpl > Settings > Builds > Deploy Hooks, then add it as a repository secret."
+          exit 0
+        fi
+        # -f so an HTTP error is an exit code, -sS so the only output is a real error message.
+        response=$(curl -fsS -X POST "$DEPLOY_HOOK")
+        echo "Triggered a Workers Build: $response"

@@ -4,7 +4,8 @@ import { Logo } from '@/components/logo'
 import { Search } from '@/components/search'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { TooltipHost } from '@/components/tooltip-host'
-import { getSearchIndex, getSyncHealth } from '@/lib/queries'
+import { UserStateProvider } from '@/components/user-state'
+import { getSyncHealth } from '@/lib/queries'
 import { THEME_SCRIPT } from '@/lib/theme'
 import './globals.css'
 
@@ -43,9 +44,12 @@ const NAV = [
 const STALE_SECONDS = 36 * 60 * 60
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  // Fetched in the layout so search works from every page with no per-keystroke round trip.
-  // 578 rows; the cost is one cheap query per render, shared by every route.
-  const [searchIndex, health] = await Promise.all([getSearchIndex(), getSyncHealth()])
+  // The search index is deliberately NOT fetched here any more. It was, and passing it to
+  // <Search /> as a prop serialised all 674 rows into every page — 133KB of JSON, twice per page
+  // once the RSC payload is counted, which came to 468MB of exported output for the player
+  // profiles alone. It is app/search-index.json/route.ts now: one file, fetched by the people who
+  // open search, cached by their browser.
+  const health = await getSyncHealth()
   const stale = health.filter(
     (h) => h.ageSeconds === null || h.ageSeconds > STALE_SECONDS,
   ).length
@@ -106,14 +110,20 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 />
                 <span className="hidden sm:inline">{stale === 0 ? 'Live' : `${stale} stale`}</span>
               </Link>
-              <Search index={searchIndex} />
+              <Search />
               {/* Rightmost, after search: a setting you touch once, not a tool you reach for
                   every session. */}
               <ThemeToggle />
             </div>
           </div>
         </header>
-        <main className="mx-auto max-w-[1800px] px-4 py-6">{children}</main>
+        {/* The watchlist and the saved views are the only mutable state in the app, and the
+            only thing not prerendered — every page is a static file now, so they are fetched
+            in the browser instead. One provider around everything means a heart clicked in the
+            players table and the same player's heart on the dashboard are the same state. */}
+        <main className="mx-auto max-w-[1800px] px-4 py-6">
+          <UserStateProvider>{children}</UserStateProvider>
+        </main>
         {/* One tooltip for the whole app, driven by delegated events. Mounted here so a
             trigger anywhere costs a data attribute and no client boundary — including inside
             server components, which cannot hold state of their own. */}

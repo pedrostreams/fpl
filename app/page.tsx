@@ -5,6 +5,7 @@ import { Metric, Panel, RunPips } from '@/components/dash'
 import { PlayerIdentity } from '@/components/player-identity'
 import { TeamBadge } from '@/components/team-badge'
 import { WatchButton } from '@/components/watch-button'
+import { WatchlistMetric, WatchlistPanel } from '@/components/watchlist-panel'
 import { fmt, fmtInt, fmtPct, fmtPrice, fmtSigned, relativeAge } from '@/lib/format'
 import { FixtureNote } from '@/components/fixture-note'
 import { tipRows } from '@/lib/tooltip'
@@ -14,16 +15,13 @@ import {
   getManager,
   getNextMatches,
   getPositionPriceValue,
+  getPriceMovementLive,
   getSeasonContext,
   getSnapshotCoverage,
   getSyncHealth,
   getTargetPlayers,
   getTeamTargets,
-  getWatchlist,
-  getWatchlistCodes,
 } from '@/lib/queries'
-
-export const revalidate = 300
 
 function kickoff(iso: string | null): string {
   if (!iso) return '—'
@@ -45,12 +43,11 @@ function daysUntil(iso: string | null): number | null {
 
 export default async function Dashboard() {
   const [
-    ctx, manager, watchlist, captains, attackRuns, defenceRuns, targets, form, matches,
-    coverage, health, watchedCodes, priceBands,
+    ctx, manager, captains, attackRuns, defenceRuns, targets, form, matches,
+    coverage, health, priceMovementLive, priceBands,
   ] = await Promise.all([
     getSeasonContext(),
     getManager(),
-    getWatchlist(),
     getCaptainPicks(30),
     getTeamTargets('attack', 5),
     getTeamTargets('defence', 5),
@@ -59,7 +56,7 @@ export default async function Dashboard() {
     getNextMatches(10),
     getSnapshotCoverage(),
     getSyncHealth(),
-    getWatchlistCodes(),
+    getPriceMovementLive(),
     getPositionPriceValue(),
   ])
 
@@ -68,7 +65,7 @@ export default async function Dashboard() {
   const days = daysUntil(firstKickoff)
   const stale = health.filter((h) => h.ageSeconds === null || h.ageSeconds > 60 * 60 * 36)
   const lastSeason = manager?.seasons[0]
-  const priceFrozen = !watchlist.some((w) => (w.netTransfersEvent ?? 0) !== 0)
+  const priceFrozen = !priceMovementLive
   // Highest ceiling, for the one-line summary that replaced the duplicated captain panel.
   const topCeiling = [...captains].sort(
     (a, b) => (b.ceilingScore ?? 0) - (a.ceilingScore ?? 0),
@@ -99,11 +96,7 @@ export default async function Dashboard() {
             hint={days === null ? undefined : `${days} days · ${kickoff(firstKickoff)}`}
             tone="accent"
           />
-          <Metric
-            label="Watchlist"
-            value={fmtInt(watchlist.length)}
-            hint={watchlist.length === 0 ? 'nothing saved yet' : 'players saved'}
-          />
+          <WatchlistMetric />
           <Metric
             label="Sync"
             value={stale.length ? `${stale.length} stale` : 'all fresh'}
@@ -135,50 +128,11 @@ export default async function Dashboard() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* ---- watchlist ---- */}
-        <Panel
-          title="Your watchlist"
-          href="/players"
-          hrefLabel="Find players"
-          lead={
-            watchlist.length === 0
-              ? 'Nothing saved. Heart a player anywhere in the app and they appear here with their next fixture.'
-              : `${watchlist.length} saved. Their next fixture and ownership drift, so you can decide without leaving this page.`
-          }
-        >
-          {watchlist.length > 0 && (
-            <div className="flex flex-col gap-2.5">
-              {watchlist.map((w) => (
-                <PlayerIdentity
-                  key={w.playerCode}
-                  playerCode={w.playerCode}
-                  name={w.webName}
-                  position={w.position}
-                  teamCode={w.teamCode}
-                  teamShort={w.teamShort}
-                  status={w.status}
-                  news={w.news}
-                  opponent={{ short: w.opponentShort, isHome: w.isHome }}
-                  sub={
-                    <>
-                      {fmtPrice(w.price)} · {fmtPct(w.selectedByPercent)} owned
-                      {w.nextDifficulty !== null && ` · ${(1 - w.nextDifficulty).toFixed(2)} ease`}
-                    </>
-                  }
-                  right={
-                    <span className="num text-[12px]" style={{ color: 'var(--muted)' }}>
-                      {fmt(w.xgiPer90, 3)}
-                      <span className="ml-1 text-[10px]" style={{ color: 'var(--faint)' }}>
-                        xGI
-                      </span>
-                    </span>
-                  }
-                  action={<WatchButton playerCode={w.playerCode} watched />}
-                />
-              ))}
-            </div>
-          )}
-        </Panel>
+        {/* ---- watchlist ----
+             A client component, and the only one on this page: everything else here is public
+             football data that the sync writes and the build bakes in, while this is the one
+             thing a visitor changes. It fetches itself on mount from /api/user-state. */}
+        <WatchlistPanel />
 
         {/* ---- captain: LINKED, not rendered ----
              This panel used to render a second `CaptainPanel`, identical to the one on /gw.
@@ -276,11 +230,17 @@ export default async function Dashboard() {
         {/* ---- players to target ---- */}
         {/* No ownership gate here any more. This panel used to read `hidden_gems`, so the
             answer to "who should I buy" silently excluded Haaland, Saka, Raya and Bruno for
-            the crime of being popular — one filter doing two different jobs. `/gems` keeps
-            it, because being unowned is that page's entire premise. */}
+            the crime of being popular — one filter doing two different jobs. The differentials
+            preset keeps the gate, because being unowned is that view's entire premise.
+
+            Linked directly rather than through `/gems`, which this said until the static export
+            moved the redirect out of next.config.ts and into public/_redirects. `typedRoutes`
+            stopped recognising the old path the moment it left the Next config and failed the
+            build on this line — which is the mechanism working, and the link is better pointed
+            at where it was always going to end up. */}
         <Panel
           title="Players to target"
-          href="/gems"
+          href={'/players?view=differentials' as Route}
           hrefLabel="Differentials"
           lead={
             targets.length === 0 ? (
@@ -331,12 +291,7 @@ export default async function Dashboard() {
                     {fmt(t.score, 3)}
                   </span>
                 }
-                action={
-                  <WatchButton
-                    playerCode={t.playerCode}
-                    watched={watchedCodes.includes(t.playerCode)}
-                  />
-                }
+                action={<WatchButton playerCode={t.playerCode} />}
               />
             ))}
           </div>
@@ -382,7 +337,7 @@ export default async function Dashboard() {
                 right={
                   <span className="num text-[12px]">{fmt(p.formValue, 2)}</span>
                 }
-                action={<WatchButton playerCode={p.playerCode} watched={false} />}
+                action={<WatchButton playerCode={p.playerCode} />}
               />
             ))}
           </div>

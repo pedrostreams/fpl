@@ -55,3 +55,10 @@ jobs:
         # --no-cache: the raw payload cache is pointless on an ephemeral runner, and at
         # hourly cadence it would be the largest thing in the workspace.
         run: python -m sync.cli snapshot --no-cache
+
+      # The data just changed, so the site has to be rebuilt to show it — see
+      # .github/actions/rebuild-site for why freshness is a deploy rather than a cache.
+      - name: Rebuild the site
+        uses: ./.github/actions/rebuild-site
+        with:
+          deploy-hook: ${{ secrets.CLOUDFLARE_DEPLOY_HOOK }}

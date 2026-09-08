@@ -16,9 +16,10 @@ import { ColumnPicker } from '@/components/column-picker'
 import { PlayerScatter } from '@/components/player-scatter'
 import { PlayerIdentity } from '@/components/player-identity'
 import { WatchButton } from '@/components/watch-button'
+import { useUserState } from '@/components/user-state'
 import { COLUMNS_BY_KEY, PINNED, PRESETS } from '@/lib/columns'
 import type { Filters, Preset } from '@/lib/columns'
-import { countActive, encodeFilters, passes } from '@/lib/filters'
+import { countActive, decodeFilters, encodeFilters, passes } from '@/lib/filters'
 import { POSITION_VAR, formatCell, ordinal, statusColour } from '@/lib/format'
 import type { SavedView, WideTable } from '@/lib/queries'
 import { describeRank, rankAll } from '@/lib/rank'
@@ -94,18 +95,10 @@ function HeatCell({ text, p }: { text: string; p: number | null }) {
 
 export function PlayersView({
   table: wide,
-  watchedCodes,
-  savedViews,
   statsSeason,
-  initialPreset,
-  initialFilters,
 }: {
   table: WideTable
-  watchedCodes: number[]
-  savedViews: SavedView[]
   statsSeason: string | null
-  initialPreset: string
-  initialFilters: Filters
 }) {
   // Columnar over the wire, objects in memory. 558 objects is nothing to hold, and it keeps
   // both TanStack and the ranker working with plain records instead of index arithmetic.
@@ -114,20 +107,25 @@ export function PlayersView({
     [wide],
   )
 
-  const watched = useMemo(() => new Set(watchedCodes), [watchedCodes])
+  // Fetched in the browser rather than handed down as props. This page is prerendered — 558
+  // players and 89 columns of it — and the hearts and saved views are the only part a visitor
+  // can change, so they are the only part that cannot be baked in. See components/user-state.tsx.
+  const { watched, views: savedViews } = useUserState()
+
   const teams = useMemo(
     () => [...new Set(rows.map((r) => String(r.team_short ?? '')).filter(Boolean))].sort(),
     [rows],
   )
 
-  const startingPreset =
-    PRESETS.find((p) => p.key === initialPreset) ?? PRESETS[0]
+  // Overview, always, for the first render. The URL used to decide this on the server, which is
+  // what made /players the one page that had to be rendered per request — measured at 300ms of
+  // CPU, thirty times what the Cloudflare free plan allows. The effect below applies the URL a
+  // moment later instead.
+  const startingPreset = PRESETS[0]
 
   const [viewKey, setViewKey] = useState<string>(startingPreset.key)
   const [columns, setColumns] = useState<string[]>(startingPreset.columns)
-  const [filters, setFilters] = useState<Filters>(
-    countActive(initialFilters) ? initialFilters : (startingPreset.filters ?? {}),
-  )
+  const [filters, setFilters] = useState<Filters>(startingPreset.filters ?? {})
   const [sorting, setSorting] = useState<SortingState>(
     startingPreset.sort ? [{ id: startingPreset.sort.key, desc: startingPreset.sort.desc }] : [],
   )
@@ -150,13 +148,58 @@ export function PlayersView({
     setSorting(v.sortKey ? [{ id: v.sortKey, desc: v.sortDesc }] : [])
   }
 
+  // ---------------------------------------------------------------------------------------
+  // The URL, in both directions
+  // ---------------------------------------------------------------------------------------
+  // Reading it on mount rather than during render is forced, not stylistic: the page is
+  // prerendered at build time, where there is no `window`, so a render that consulted the query
+  // string would produce different HTML in the browser than in the build and hydration would
+  // fail. One extra render is the price — open ?view=differentials and Overview's columns paint
+  // for a frame first.
+  const [urlRead, setUrlRead] = useState(false)
+  const [wantedSaved, setWantedSaved] = useState<string | null>(null)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const wanted = params.get('view')
+    const preset = wanted ? PRESETS.find((p) => p.key === wanted) : undefined
+
+    if (preset) applyPreset(preset)
+    // A saved view cannot be applied yet: the list is still in flight from /api/user-state, so
+    // note what the link asked for and let the effect below match it when the names arrive.
+    else if (wanted?.startsWith('saved:')) setWantedSaved(wanted)
+
+    const urlFilters = decodeFilters(params)
+    if (countActive(urlFilters)) setFilters(urlFilters)
+
+    setUrlRead(true)
+    // Once, on mount. From here the state owns the URL rather than the other way round.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!wantedSaved) return
+    const saved = savedViews.find((v) => `saved:${v.id}` === wantedSaved)
+    if (saved) applySaved(saved)
+    // Either it was applied or the list came back without it — a view since deleted, or a link
+    // from a browser that saved one this database has never seen. Overview is already on screen,
+    // which is the right thing to show either way.
+    if (saved || savedViews.length) setWantedSaved(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedViews, wantedSaved])
+
   // The URL is the shareable state. replaceState rather than a router push: this fires on
   // every slider drag, and a history entry per pixel would make the back button useless.
+  //
+  // Gated on `urlRead` because effects run in declaration order on mount: unguarded, this one
+  // would rewrite the address bar to `?view=overview` before the effect above had a chance to
+  // read what the incoming link actually asked for.
   useEffect(() => {
+    if (!urlRead) return
     const qs = encodeFilters(filters)
     const url = `/players?view=${encodeURIComponent(viewKey)}${qs ? `&${qs}` : ''}`
     window.history.replaceState(null, '', url)
-  }, [viewKey, filters])
+  }, [urlRead, viewKey, filters])
 
   const visible = useMemo(
     () => rows.filter((r) => passes(r, filters, watched)),
@@ -319,10 +362,7 @@ export function PlayersView({
       enableSorting: false,
       cell: ({ row }) => (
         <div className="flex items-center justify-center px-1">
-          <WatchButton
-            playerCode={Number(row.original.player_code)}
-            watched={watched.has(Number(row.original.player_code))}
-          />
+          <WatchButton playerCode={Number(row.original.player_code)} />
         </div>
       ),
     })

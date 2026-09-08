@@ -11,8 +11,6 @@ import {
   getTeams,
 } from '@/lib/queries'
 
-export const revalidate = 300
-
 function Heat({ p, children }: { p: number | null; children: React.ReactNode }) {
   if (p === null) {
     return (

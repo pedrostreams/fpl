@@ -1,0 +1,45 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fpl",
+
+  // The site is a static export: `next build` writes 687 HTML files into out/, and Cloudflare
+  // serves them from its asset layer. This is the whole reason the deployment is free rather
+  // than $5/month — "requests to static assets are free and unlimited", and a request that
+  // matches a file never invokes the Worker, so the free plan's 10ms CPU ceiling cannot apply to
+  // reading the site. Measured before the move: /players cost 300ms of CPU to render, 30x the
+  // limit, which is Error 1102 rather than a slow page.
+  //
+  // `not_found_handling` serves out/404.html for a path that is neither a file nor an endpoint;
+  // worker/index.ts hands those back to this binding rather than answering them itself.
+  "assets": {
+    "directory": "out",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page"
+  },
+
+  // Only /api/* reaches this. Three endpoints for the watchlist and the saved views — the only
+  // state a visitor can change, and so the only state that cannot be a build artefact.
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  // `pg` needs Node's net/tls/crypto, which the Workers runtime only exposes behind this flag.
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Hyperdrive rather than a direct connection, for two reasons. It pools next to Supabase
+  // instead of opening a fresh connection per isolate into a 15-slot pooler already shared with
+  // the sync jobs; and it terminates TLS itself, which matters because the
+  // `ssl: { rejectUnauthorized: false }` in lib/db.ts is a Node-only escape hatch that the
+  // Workers runtime ignores — it would reject Supabase's chain outright.
+  //
+  // REPLACE THE ID once, at setup:
+  //   npx wrangler hyperdrive create fpl-db --connection-string="<DATABASE_URL>"
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "REPLACE_WITH_HYPERDRIVE_ID"
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  }
+}

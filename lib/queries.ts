@@ -1,5 +1,5 @@
 import { COLUMNS, COLUMNS_BY_KEY, PRESETS } from './columns'
-import { num, pool, query } from './db'
+import { num, query, queryWithFields } from './db'
 
 /**
  * Every read goes through a view defined in supabase/migrations. Nothing here computes a
@@ -44,8 +44,10 @@ function auditCatalogue(available: Set<string>): string[] {
 let catalogueAudited = false
 
 export async function getPlayerWide(): Promise<WideTable> {
-  const result = await pool.query('select * from player_wide')
-  const cols = result.fields.map((f) => f.name)
+  const { rows: wideRows, fields } = await queryWithFields<Record<string, unknown>>(
+    'select * from player_wide',
+  )
+  const cols = fields.map((f) => f.name)
 
   if (!catalogueAudited) {
     catalogueAudited = true
@@ -64,13 +66,11 @@ export async function getPlayerWide(): Promise<WideTable> {
   // never has to know which columns were numeric in Postgres — and sorting never compares
   // "9" against "10" as text.
   const numericCols = new Set(
-    result.fields
-      .filter((f) => NUMERIC_OIDS.has(f.dataTypeID))
-      .map((f) => f.name),
+    fields.filter((f) => NUMERIC_OIDS.has(f.dataTypeID)).map((f) => f.name),
   )
   const coerce = cols.map((c) => numericCols.has(c))
 
-  const rows = result.rows.map((r: Record<string, unknown>) =>
+  const rows = wideRows.map((r: Record<string, unknown>) =>
     cols.map((c, i) => (coerce[i] ? num(r[c]) : (r[c] ?? null))),
   )
 
@@ -146,23 +146,84 @@ export async function getSearchIndex(): Promise<SearchEntry[]> {
   }))
 }
 
+/**
+ * Every code the app can link to, for `generateStaticParams`.
+ *
+ * `search_index` rather than `players` and `teams` directly, and that is the point: search
+ * results, player links and team links all come from this view, so building exactly its codes
+ * makes "every link in the app resolves to a file" true by construction rather than by luck.
+ * The two profile routes are prerendered with `dynamicParams = false`, so a code that is not in
+ * here is a 404 — which is what it was before, since the page called `notFound()` for a code
+ * `player_wide` did not have.
+ */
+export async function getRoutableCodes(kind: 'player' | 'team'): Promise<number[]> {
+  const rows = await query<{ code: number }>(
+    'select code from search_index where kind = $1 order by code',
+    [kind],
+  )
+  return rows.map((r) => Number(r.code))
+}
+
 // ---------------------------------------------------------------------------------------
 // Player profile
 // ---------------------------------------------------------------------------------------
 
+/**
+ * A per-player view, fetched whole once and grouped by code.
+ *
+ * These six queries used to run per player - `where player_code = $1`, 578 times each, some four
+ * thousand round trips to a pooler in eu-central. That was fine while a profile was rendered on
+ * demand, and only for the players somebody actually opened. It is not fine as a build step:
+ * prerendering all 578 exhausted the Supabase pooler outright, first as "timeout exceeded when
+ * trying to connect" and then as server-side statement cancellations, and widening the pool from
+ * 3 connections to 5 only moved the failure later into the build.
+ *
+ * Six queries instead of four thousand, then. The ORDER BY stays in SQL - grouping preserves row
+ * order within a key - and the one caller that took a per-player LIMIT slices its group instead.
+ *
+ * Correct only because of where it runs: a single `next build` process, against data no one is
+ * writing, producing static files. Nothing calls these at runtime, because every page that uses
+ * them is prerendered, so none of it has to reason about invalidation. That is also why the
+ * cache is a closure rather than anything cleverer.
+ */
+function groupedByPlayer<T>(
+  sql: string,
+  map: (r: Record<string, unknown>) => T,
+): (code: number) => Promise<T[]> {
+  let pending: Promise<Map<number, T[]>> | undefined
+  return async (code) => {
+    // The promise, not the map: 2 build workers rendering profiles concurrently share one fetch.
+    pending ??= (async () => {
+      const rows = await query<Record<string, unknown>>(sql)
+      const grouped = new Map<number, T[]>()
+      for (const r of rows) {
+        const key = Number(r.player_code)
+        const list = grouped.get(key)
+        if (list) list.push(map(r))
+        else grouped.set(key, [map(r)])
+      }
+      return grouped
+    })()
+    return (await pending).get(code) ?? []
+  }
+}
+
+const wideByPlayer = groupedByPlayer<Record<string, unknown>>(
+  'select * from player_wide',
+  (r) => {
+    // Coerce every numeric-looking string once, the same reason getPlayerWide does.
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(r)) {
+      out[k] = typeof v === 'string' && v !== '' && Number.isFinite(Number(v)) ? Number(v) : v
+    }
+    return out
+  },
+)
+
 /** One player's `player_wide` row, keyed by code. Null when the code is unknown. */
 export async function getPlayerRow(code: number): Promise<Record<string, unknown> | null> {
-  const rows = await query<Record<string, unknown>>(
-    'select * from player_wide where player_code = $1',
-    [code],
-  )
-  if (!rows.length) return null
-  // Coerce every numeric-looking string once, the same reason getPlayerWide does.
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(rows[0])) {
-    out[k] = typeof v === 'string' && v !== '' && Number.isFinite(Number(v)) ? Number(v) : v
-  }
-  return out
+  const rows = await wideByPlayer(code)
+  return rows[0] ?? null
 }
 
 export type MetricPercentile = {
@@ -185,12 +246,15 @@ let directionsAudited = false
  * midfielders." 0.398 is unreadable; "88th percentile for shots but 35th for xA" is a scouting
  * report.
  */
+const percentilesByPlayer = groupedByPlayer<Record<string, unknown>>(
+  `select player_code, metric, value, percentile, position_rank, pool_size, is_quotable,
+          higher_is_better
+     from player_metric_percentile`,
+  (r) => r,
+)
+
 export async function getPlayerPercentiles(code: number): Promise<Map<string, MetricPercentile>> {
-  const rows = await query<Record<string, unknown>>(
-    `select metric, value, percentile, position_rank, pool_size, is_quotable, higher_is_better
-     from player_metric_percentile where player_code = $1`,
-    [code],
-  )
+  const rows = await percentilesByPlayer(code)
 
   // `higher_is_better` is declared twice — in the view and as `direction` in lib/columns.ts —
   // and a disagreement is the worst kind of bug here: the cell shades green while the sentence
@@ -243,14 +307,11 @@ export type Shot = {
   minute: number | null
 }
 
-export async function getPlayerShots(code: number): Promise<Shot[]> {
-  const rows = await query<Record<string, unknown>>(
-    `select location_x, location_y, xg, is_goal, body_part, situation, result, zone,
-            distance_m, minute
-     from player_shots where player_code = $1 order by kickoff, minute`,
-    [code],
-  )
-  return rows.map((r) => ({
+const shotsByPlayer = groupedByPlayer<Shot>(
+  `select player_code, location_x, location_y, xg, is_goal, body_part, situation, result, zone,
+          distance_m, minute
+     from player_shots order by player_code, kickoff, minute`,
+  (r) => ({
     x: num(r.location_x) ?? 0,
     y: num(r.location_y) ?? 0.5,
     xg: num(r.xg),
@@ -261,7 +322,11 @@ export async function getPlayerShots(code: number): Promise<Shot[]> {
     zone: (r.zone as string) ?? null,
     distanceM: num(r.distance_m),
     minute: num(r.minute),
-  }))
+  }),
+)
+
+export async function getPlayerShots(code: number): Promise<Shot[]> {
+  return shotsByPlayer(code)
 }
 
 export type CareerSeason = {
@@ -278,14 +343,11 @@ export type CareerSeason = {
   isCurrentSeason: boolean
 }
 
-export async function getPlayerCareer(code: number): Promise<CareerSeason[]> {
-  const rows = await query<Record<string, unknown>>(
-    `select season, minutes, total_points, goals_scored, assists, clean_sheets, bonus,
-            expected_goals, expected_assists, points_per_90, is_current_season
-     from player_career where player_code = $1 order by season desc`,
-    [code],
-  )
-  return rows.map((r) => ({
+const careerByPlayer = groupedByPlayer<CareerSeason>(
+  `select player_code, season, minutes, total_points, goals_scored, assists, clean_sheets, bonus,
+          expected_goals, expected_assists, points_per_90, is_current_season
+     from player_career order by player_code, season desc`,
+  (r) => ({
     season: String(r.season ?? ''),
     minutes: num(r.minutes),
     totalPoints: num(r.total_points),
@@ -297,7 +359,11 @@ export async function getPlayerCareer(code: number): Promise<CareerSeason[]> {
     expectedAssists: num(r.expected_assists),
     pointsPer90: num(r.points_per_90),
     isCurrentSeason: Boolean(r.is_current_season),
-  }))
+  }),
+)
+
+export async function getPlayerCareer(code: number): Promise<CareerSeason[]> {
+  return careerByPlayer(code)
 }
 
 export type UpcomingFixture = {
@@ -313,14 +379,11 @@ export type UpcomingFixture = {
   pCleanSheet: number | null
 }
 
-export async function getPlayerFixtures(code: number, limit = 6): Promise<UpcomingFixture[]> {
-  const rows = await query<Record<string, unknown>>(
-    `select gameweek, kickoff_time, is_home, opponent_short, opponent_name, difficulty,
-            position_difficulty, p_win, expected_goals_for, p_clean_sheet
-     from player_fixtures where player_code = $1 order by gameweek limit $2`,
-    [code, limit],
-  )
-  return rows.map((r) => ({
+const fixturesByPlayer = groupedByPlayer<UpcomingFixture>(
+  `select player_code, gameweek, kickoff_time, is_home, opponent_short, opponent_name, difficulty,
+          position_difficulty, p_win, expected_goals_for, p_clean_sheet
+     from player_fixtures order by player_code, gameweek`,
+  (r) => ({
     gameweek: num(r.gameweek),
     kickoff: r.kickoff_time ? new Date(r.kickoff_time as string).toISOString() : null,
     isHome: Boolean(r.is_home),
@@ -331,7 +394,12 @@ export async function getPlayerFixtures(code: number, limit = 6): Promise<Upcomi
     pWin: num(r.p_win),
     expectedGoalsFor: num(r.expected_goals_for),
     pCleanSheet: num(r.p_clean_sheet),
-  }))
+  }),
+)
+
+/** The next `limit` fixtures. The LIMIT moved from SQL to a slice when the query went batched. */
+export async function getPlayerFixtures(code: number, limit = 6): Promise<UpcomingFixture[]> {
+  return (await fixturesByPlayer(code)).slice(0, limit)
 }
 
 // ---------------------------------------------------------------------------------------
@@ -730,16 +798,17 @@ export type PlayerForm = {
   basis: string | null
 }
 
+const formByPlayer = groupedByPlayer<Record<string, unknown>>(
+  `select player_code, metric, label, short_label, decimals, as_percent, window_mean, season_mean,
+          delta, std_error, rank_earned, metric_rank, pool, percentile, separated, z, form_word,
+          reliability_6, reliability_season, appearances, basis
+     from player_form_metric
+    order by player_code, separated desc, sort_order`,
+  (r) => r,
+)
+
 export async function getPlayerForm(code: number): Promise<PlayerForm> {
-  const rows = await query<Record<string, unknown>>(
-    `select metric, label, short_label, decimals, as_percent, window_mean, season_mean, delta, std_error,
-            rank_earned, metric_rank, pool, percentile, separated, z, form_word,
-            reliability_6, reliability_season, appearances, basis
-       from player_form_metric
-      where player_code = $1
-      order by separated desc, sort_order`,
-    [code],
-  )
+  const rows = await formByPlayer(code)
   return {
     appearances: Number(rows[0]?.appearances ?? 0),
     basis: rows[0]?.basis ? String(rows[0].basis) : null,
@@ -1337,17 +1406,33 @@ export async function getMovement(): Promise<MovementRow[]> {
   }))
 }
 
+/**
+ * Whether FPL has started moving prices and counting transfers yet.
+ *
+ * The dashboard and the brief both need this to decide between "net transfers over the last 24
+ * hours" and "frozen until the GW1 deadline". Both used to infer it from the watchlist — did any
+ * hearted player have a non-zero `net_transfers_event` — which was wrong in a way that hid
+ * itself: an empty watchlist reported "frozen" no matter what the league was doing, and the
+ * watchlist is now fetched in the browser and so is not available while the page is built.
+ *
+ * Asking the whole table is both cheaper and the actual question. `exists` stops at the first
+ * row rather than scanning 558 of them.
+ */
+export async function getPriceMovementLive(): Promise<boolean> {
+  const rows = await query<{ live: boolean }>(
+    'select exists (select 1 from player_movement where coalesce(net_transfers_event, 0) <> 0) as live',
+  )
+  return Boolean(rows[0]?.live)
+}
+
 // --------------------------------------------------------------------------- //
 // The dashboard
 // --------------------------------------------------------------------------- //
 
-/** Just the codes, for the scout table's hearts. A Set keeps the row render O(1). */
-export async function getWatchlistCodes(): Promise<number[]> {
-  const rows = await query<{ player_code: number }>(
-    'select player_code from watchlist order by added_at desc',
-  )
-  return rows.map((r) => Number(r.player_code))
-}
+// getWatchlistCodes lived here: just the player codes, for the hearts. Every caller was a page
+// that rendered the hearts server-side, and none of them can any more — the pages are
+// prerendered and the watchlist is fetched in the browser, where components/user-state.tsx
+// derives the codes from the rows getWatchlist already returns.
 
 export type WatchRow = {
   playerCode: number

@@ -53,3 +53,11 @@ jobs:
         run: |
           python -m sync.cli market_odds \
             ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      # The data just changed, so the site has to be rebuilt to show it — see
+      # .github/actions/rebuild-site for why freshness is a deploy rather than a cache.
+      - name: Rebuild the site
+        if: ${{ !inputs.dry_run }}
+        uses: ./.github/actions/rebuild-site
+        with:
+          deploy-hook: ${{ secrets.CLOUDFLARE_DEPLOY_HOOK }}

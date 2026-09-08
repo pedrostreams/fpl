@@ -2,8 +2,6 @@ import { MovementTable } from '@/components/movement-table'
 import { fmtInt, relativeAge } from '@/lib/format'
 import { getMovement, getSeasonContext, getSnapshotCoverage } from '@/lib/queries'
 
-export const revalidate = 300
-
 function Stat({
   label,
   value,
