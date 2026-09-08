@@ -114,14 +114,24 @@ and Cloudflare bills CPU rather than the wait for Postgres.
 
 Everything below needs a Cloudflare login, so it is done once by hand.
 
-```bash
+PowerShell, because that is the shell on the machine this is run from — `grep` and `$(...)` are
+not available there, and getting a *silently empty* connection string out of them makes wrangler
+complain about a missing `--database` instead of about the real problem.
+
+```powershell
+cd C:\Users\Peder\Desktop\Hobby\fotball\fpl
 npx wrangler login
 
 # 1. Hyperdrive pools the connection next to Supabase and terminates TLS itself.
-#    Copy the id it prints into the "hyperdrive" block in wrangler.jsonc.
-npx wrangler hyperdrive create fpl-db --connection-string="$DATABASE_URL"
+$db = ((Select-String -Path .env -Pattern '^DATABASE_URL=' | Select-Object -First 1).Line) `
+        -replace '^DATABASE_URL=', ''
+if (-not $db) { throw 'DATABASE_URL not found in .env' }
+npx wrangler hyperdrive create fpl-db --connection-string="$db"
 
-# 2. First deploy, which also creates the Worker.
+# Copy the id it prints into the "hyperdrive" block in wrangler.jsonc, then commit it.
+# The id is not a secret: the connection string itself is stored at Cloudflare, not in the repo.
+
+# 2. First deploy, which also creates the Worker. Uploads ~5,500 files / ~132 MB the first time.
 npm run deploy
 ```
 

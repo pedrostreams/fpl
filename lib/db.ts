@@ -78,15 +78,33 @@ function createPool(): Pool {
     // ignores `rejectUnauthorized` and would reject this chain. That is one of the two reasons
     // the /api handlers go through Hyperdrive — it terminates TLS itself.
     ssl: isLocal ? undefined : { rejectUnauthorized: false },
-    // The pooler is shared with the sync jobs and with every other build worker, so stay
-    // modest. The dashboard alone fires 11 queries concurrently; they queue on these 3
-    // connections, which costs a few hundred milliseconds and is far cheaper than exhausting
-    // the pooler.
+    // 3, and measured rather than assumed — both directions were tried.
+    //
+    // The old reasoning here was "the dashboard fires 11 queries concurrently and they queue on
+    // these 3 connections for a few hundred milliseconds". That was true while a request
+    // rendered one page. A static export renders many pages at once per worker: instrumenting a
+    // build showed **18 queries in flight against 3 connections**, so everything took its queue
+    // position rather than its cost — `select * from snapshot_coverage` 20s, `select * from
+    // player_wide` 17.9s against 4.4s measured alone — and whichever query was last waited past
+    // the deadline below and threw "timeout exceeded when trying to connect". Three builds died
+    // that way.
+    //
+    // The obvious fix — more connections — is wrong here, and expensively so. At `max: 5` per
+    // worker (10 against the pooler's 15) the build failed differently: `canceling statement due
+    // to statement timeout`, 57014. This Supabase instance runs `statement_timeout = 2min`, and
+    // ten concurrent readers of an 89-column view over 654 players pushed a 4.4s query past two
+    // whole minutes. The database is the bottleneck, not the queue, so widening the queue just
+    // moves the failure and makes every query slower on the way.
+    //
+    // So: keep the database working on three things at a time, and let the queue be long.
     max: 3,
     idleTimeoutMillis: 30_000,
-    // Generous on purpose. This is the wait for a free connection, not for a query, and under
-    // contention 10s was short enough to fail a production build outright.
-    connectionTimeoutMillis: 30_000,
+    // This is the wait for a free connection, not a connect attempt, so patience is the correct
+    // behaviour — 30s was a fatal deadline on a queue that was merely long. A build's total
+    // heavy query work is ~6s per worker; four minutes is headroom over any honest case, and it
+    // still fails fast on the things that deserve it, like a pooler full of someone else's
+    // clients or a wrong password.
+    connectionTimeoutMillis: 240_000,
   })
 }
 

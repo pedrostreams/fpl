@@ -525,6 +525,21 @@ Because those two live at runtime, **user state is fetched in the browser**
 (`components/user-state.tsx`), not passed down as props. A heart baked into HTML built an hour ago
 would show a player who had since been un-hearted.
 
+**The build is tuned, and the numbers are measured — do not round them off.** Three settings
+hold it together, and every one of them was arrived at by a build failing:
+
+| Setting | Value | Why not higher |
+|---|---|---|
+| `pg` pool `max` (lib/db.ts) | 3 | At 5 per worker the free-tier instance got *slower*: a 4.4s query on `player_wide` passed the 2-minute `statement_timeout` and Postgres cancelled it. The database is the bottleneck, not the queue. |
+| `staticGenerationMaxConcurrency` | 2 | Next's default of 8 pages per worker put **18 queries in flight against 3 connections**. Pages then took their queue position rather than their cost and blew the per-page limit. |
+| `staticPageGenerationTimeout` | 180 | The default 60 is a cliff: `change_feed_detail` alone takes 15.4s, and Next retries a timed-out page three times, which is what escalated a slow page into cancelled statements. |
+
+The failure mode they prevent is always the same and always looks like something else:
+`timeout exceeded when trying to connect` (a queue deadline, not a connection problem), or
+`canceling statement due to statement timeout` (57014, load you added yourself). If a build starts
+failing, instrument `lib/db.ts` with a timer and log in-flight count before touching any of these —
+that is what found all three.
+
 **Freshness is a deploy.** `.github/actions/rebuild-site` POSTs a Workers Builds deploy hook at the
 end of every sync job that writes. Builds run on Cloudflare's 3,000 free minutes a month, not
 GitHub's 2,000 — this repo is private and `verify` already projects ~1,654 of those going to

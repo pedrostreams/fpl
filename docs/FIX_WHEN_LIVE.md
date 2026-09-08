@@ -449,6 +449,12 @@ traffic cannot saturate the pooler however many people are browsing. What used t
 here — three dynamic routes, each warm instance holding `max: 3` — is gone with the instances.
 Two narrower budgets replace it:
 
+- [ ] **`change_feed_detail` takes 15.4 seconds to return 120 rows.** Measured 2026-09-08
+      against the session pooler, uncontended. That is a quarter of Next's default per-page
+      budget spent on one query, and it is why `staticPageGenerationTimeout` is raised to 180.
+      Every other query in the app is under 5s and most are under 1s, so this one is an outlier
+      rather than a fact of life — worth an `explain analyze` before the feed grows. It will only
+      get slower: the view reads the snapshot series, which is the one table that grows forever
 - [ ] **The build is now the heaviest reader.** 687 pages in one process, 2 workers, `max: 3`
       each. The first attempt at prerendering the profiles exhausted the pooler outright
       (`timeout exceeded when trying to connect`, then server-side cancellations), which is why

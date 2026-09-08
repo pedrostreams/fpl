@@ -28,6 +28,20 @@ const nextConfig: NextConfig = {
    */
   output: 'export',
 
+  /**
+   * Next gives each page 60 seconds to render and then retries it three times. That default is
+   * a cliff rather than a limit here: the slowest honest query in this app, change_feed_detail
+   * on /changed, takes 15.4 seconds on its own against a free-tier Supabase in eu-central, and
+   * the Cloudflare build runner sits farther from that database than any laptop does. Three
+   * builds died on the 60s ceiling, and the retries were what turned a slow page into Postgres
+   * cancelling statements at its own 2-minute timeout.
+   *
+   * A ceiling costs nothing when pages are fast, so it is set where it stops being a lie about
+   * how long the data layer can take. If a page ever genuinely needs three minutes, the query
+   * behind it is the bug.
+   */
+  staticPageGenerationTimeout: 180,
+
   // `pg` is a server-only dependency with native-ish internals; keeping it external stops
   // the bundler trying to trace it into the client graph. Still true with an export — every
   // query in lib/queries.ts runs during the build, and the Worker imports the same modules.
@@ -42,7 +56,21 @@ const nextConfig: NextConfig = {
   //
   // It matters more now that there are 687 pages rather than 13. The per-player queries were
   // batched into one-per-view for the same reason — see groupedByPlayer in lib/queries.ts.
-  experimental: { cpus: 2 },
+  experimental: {
+    cpus: 2,
+    // Next renders 8 pages at once per worker by default, and that default is what broke this
+    // build three times over. Each of the five aggregate pages fires 10-15 queries, so eight in
+    // flight meant **18 queries queued against a pool of 3** (measured by instrumenting
+    // lib/db.ts). Everything then took its queue position rather than its cost, pages sailed
+    // past Next own 60-second per-page limit, Next retried them three times, and the retries
+    // piled enough load on for Postgres to start cancelling statements at its 2-minute timeout.
+    //
+    // Two at a time keeps the queue short enough that the slowest honest page fits the budget.
+    // The lever is deliberately here rather than a bigger pool: at 5 connections per worker the
+    // database — a free-tier instance computing an 89-column view over 654 players — got slower,
+    // not faster, and pushed a 4.4s query past two minutes. See lib/db.ts.
+    staticGenerationMaxConcurrency: 2,
+  },
 
   // `redirects()` lived here and cannot: a static export has no server to answer with a 308.
   // Both entries — `/gems` and `/scout` — are in public/_redirects, which Cloudflare applies
