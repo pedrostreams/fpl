@@ -6,7 +6,7 @@ Football Fix Premium subscription with free sources. See `README.md` for setup a
 
 **Deadline: GW1 is 2026-08-21 17:30 UTC.**
 
-## Stack
+## Stack 
 
 Python sync (GitHub Actions, **clocked by pg_cron**) → Supabase Postgres → Next.js + TS web
 app, exported to static HTML and hosted on Cloudflare Workers at fpl.peiling.tech. Sync writes
