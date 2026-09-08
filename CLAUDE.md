@@ -540,10 +540,19 @@ The failure mode they prevent is always the same and always looks like something
 failing, instrument `lib/db.ts` with a timer and log in-flight count before touching any of these —
 that is what found all three.
 
-**Freshness is a deploy.** `.github/actions/rebuild-site` POSTs a Workers Builds deploy hook at the
-end of every sync job that writes. Builds run on Cloudflare's 3,000 free minutes a month, not
-GitHub's 2,000 — this repo is private and `verify` already projects ~1,654 of those going to
-snapshot dispatches.
+**Freshness is a deploy, on an hourly rhythm.** `.github/actions/rebuild-site` POSTs a Workers
+Builds deploy hook, and builds run on Cloudflare's 3,000 free minutes a month rather than GitHub's
+2,000 — this repo is private and `verify` already projects ~1,654 of those going to snapshot
+dispatches.
+
+Not every write triggers a build, and the arithmetic is the reason. The real cadence is in
+`cron.job` in Supabase, not in any `schedule:` in the workflows, and in-season it comes to ~56
+dispatches a day: 24 hourly snapshots, 9 nightly price-window samples, 12 regular odds runs, and
+up to 24 more odds runs on a matchday. At ~2.5 minutes a build that is ~4,200 minutes a month,
+40% over budget. So `sync-snapshot` passes `hourly-only` (the price-window samples write but do
+not build), `sync-market-odds` triggers no build at all, and `sync-daily`/`sync-enrich` keep
+theirs. ~25 builds a day, ~1,900 minutes a month, and nothing on screen is more than about an hour
+behind Postgres.
 
 **Not the Cloudflare Next adapter.** `@opennextjs/cloudflare` was tried first. It writes
 prerendered pages into `.open-next/cache` as incremental-cache entries rather than as assets, so

@@ -146,10 +146,20 @@ Then, in the Cloudflare dashboard under **Workers & Pages → fpl**:
 
 ### Freshness
 
-There is no ISR and no five-minute cache. Every sync job that writes ends by POSTing the deploy
-hook, so Cloudflare rebuilds when the data actually changed. Builds take ~2 minutes and run on
-Cloudflare's 3,000 free build minutes a month — deliberately not GitHub's 2,000, of which
-`verify` already projects ~1,654 going to snapshot dispatches.
+There is no ISR and no five-minute cache: the site rebuilds when the data changes, on an hourly
+rhythm. Builds take ~2.5 minutes and run on Cloudflare's 3,000 free build minutes a month —
+deliberately not GitHub's 2,000, of which `verify` already projects ~1,654 going to snapshot
+dispatches.
+
+Hourly rather than per-write, because per-write does not fit. The dispatch cadence lives in
+`cron.job` in Supabase and comes to ~56 runs a day in-season, which would be ~4,200 build minutes
+a month. So the nightly price-window samples and every odds run write to Postgres without
+triggering a build, and the hourly snapshot carries their data onto the site within the hour. The
+arithmetic is in `.github/actions/rebuild-site`; recheck it if the schedules change:
+
+```sql
+select jobname, schedule from cron.job;
+```
 
 ### Locally
 

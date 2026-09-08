@@ -11,6 +11,12 @@ inputs:
       repository secret and never a literal.
     required: false
     default: ''
+  hourly-only:
+    description: >
+      Skip the rebuild unless this run is the top-of-hour one. For sync-snapshot, which pg_cron
+      dispatches four times an hour during the nightly price window — see the budget note below.
+    required: false
+    default: 'false'
 
 # WHY THIS STEP EXISTS
 #
@@ -21,16 +27,39 @@ inputs:
 # rebuilt, not when the database is written.
 #
 # So freshness is this step. It replaces `export const revalidate = 300`, which polled every five
-# minutes for data that changes a handful of times a day; a deploy hook fires when the data
-# actually changed, which is both cheaper and more accurate — nothing on screen is ever up to five
-# minutes stale.
+# minutes regardless of whether anything had changed. A deploy hook fires because something did.
+# The site tracks Postgres to within about an hour — see the budget below for why that is an hour
+# and not a minute.
 #
-# WHERE THE BUILD MINUTES COME FROM
+# WHERE THE BUILD MINUTES COME FROM, AND WHY NOT EVERY JOB TRIGGERS ONE
 #
-# Cloudflare's, not GitHub's. This repo is private, so Actions bills against 2,000 free minutes a
-# month and `sync.cli verify` already projects ~1,654 of them going to snapshot dispatches. A
-# ~2-minute site build 24 times a day would be ~1,400 more and would not fit. Workers Builds has
-# its own 3,000 minutes; this step spends one `curl` of GitHub's.
+# Cloudflare's minutes, not GitHub's. This repo is private, so Actions bills against 2,000 free
+# minutes a month and `sync.cli verify` already projects ~1,654 of them going to snapshot
+# dispatches. Workers Builds has its own 3,000; this step spends one `curl` of GitHub's.
+#
+# But 3,000 is not a lot at ~2.5 minutes a build, and the real dispatch cadence — from `cron.job`
+# in Supabase, not from any `schedule:` in these workflows — adds up fast now that the season is
+# live:
+#
+#   snapshot-hourly          17 * * * *          24/day
+#   snapshot-price-window    2,32,47 0-2 * * *    9/day
+#   market-odds-regular      23 */2 * * *        12/day
+#   market-odds-matchdays    53 * * * 5,6,0     ~10/day averaged
+#   sync-daily               daily                1/day
+#
+# That is ~56 builds a day, or ~4,200 minutes a month: over budget by 40%. So the site rebuilds
+# on an hourly rhythm rather than on every write:
+#
+#   · sync-snapshot passes `hourly-only`, so the three nightly price-window samples write to the
+#     database — which is the point of them, since that series cannot be backfilled — without
+#     each triggering a build.
+#   · sync-market-odds does not trigger one at all. Odds land in the database immediately and
+#     appear on the site at the next hourly rebuild, so they are at most an hour behind.
+#   · sync-daily and sync-enrich keep theirs. They are rare and they change everything.
+#
+# ~25 builds a day, ~1,900 minutes a month, and nothing on screen is ever more than about an hour
+# behind Postgres. Recheck this arithmetic if the pg_cron schedules change:
+#   select jobname, schedule from cron.job;
 runs:
   using: composite
   steps:
@@ -38,7 +67,18 @@ runs:
       shell: bash
       env:
         DEPLOY_HOOK: ${{ inputs.deploy-hook }}
+        HOURLY_ONLY: ${{ inputs.hourly-only }}
       run: |
+        if [ "$HOURLY_ONLY" = "true" ]; then
+          # 10#: strips the leading zero, which bash would otherwise read as octal and choke on
+          # for minute 08 or 09.
+          minute=$((10#$(date -u +%M)))
+          if [ "$minute" -lt 10 ] || [ "$minute" -gt 29 ]; then
+            echo "::notice title=Rebuild skipped::Minute :$minute is a price-window sample, not the hourly run. The data is written; the site picks it up at the next hourly rebuild."
+            exit 0
+          fi
+        fi
+
         if [ -z "$DEPLOY_HOOK" ]; then
           # A warning rather than a failure, so the sync workflows still pass before the hook has
           # been created. Once it is set, a broken hook DOES fail below — a rebuild that silently

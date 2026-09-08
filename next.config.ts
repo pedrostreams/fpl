@@ -31,7 +31,7 @@ const nextConfig: NextConfig = {
   /**
    * Next gives each page 60 seconds to render and then retries it three times. That default is
    * a cliff rather than a limit here: the slowest honest query in this app, change_feed_detail
-   * on /changed, takes 15.4 seconds on its own against a free-tier Supabase in eu-central, and
+   * on /changed, takes 15.4 seconds on its own against a remote free-tier Supabase, and
    * the Cloudflare build runner sits farther from that database than any laptop does. Three
    * builds died on the 60s ceiling, and the retries were what turned a slow page into Postgres
    * cancelling statements at its own 2-minute timeout.

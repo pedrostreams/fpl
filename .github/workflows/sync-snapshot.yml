@@ -62,3 +62,6 @@ jobs:
         uses: ./.github/actions/rebuild-site
         with:
           deploy-hook: ${{ secrets.CLOUDFLARE_DEPLOY_HOOK }}
+          # pg_cron dispatches this four times an hour between 00:00 and 02:59 UTC to bracket the
+          # nightly price change. All four write; only the :17 one rebuilds the site.
+          hourly-only: 'true'
